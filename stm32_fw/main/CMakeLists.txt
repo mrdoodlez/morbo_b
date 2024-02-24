@@ -32,6 +32,8 @@ set (RUNTIME_LIBRARY_SYSCALLS_NONE    "")
 set (MFLOAT_ABI_SOFTWARE              "-mfloat-abi=soft")
 set (MFLOAT_ABI_HARDWARE              "-mfloat-abi=hard")
 set (MFLOAT_ABI_MIX                   "-mfloat-abi=softfp")
+set (CUBE_DIR                         "/media/stanislav/projects/projects/STM32CubeG4")
+
 #######################################################################
 
 ###################### VARIABLES ######################################
@@ -51,8 +53,16 @@ set (PROJECT_SOURCES
 	Sources/main.c
 	Sources/syscalls.c
 	Sources/sysmem.c
-
-
+	Sources/stm32g4xx_it.c
+	Sources/system_stm32g4xx.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_cortex.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pwr.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_pwr_ex.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_rcc.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_rcc_ex.c
+	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
 	)
 
 set (PROJECT_DEFINES
@@ -62,6 +72,11 @@ set (PROJECT_DEFINES
 
 set (PROJECT_INCLUDES
 	# LIST INCLUDE DIRECTORIES HERE
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Inc
+	${CUBE_DIR}/Drivers/CMSIS/Device/ST/STM32G4xx/Include
+	${CUBE_DIR}/Drivers/CMSIS/Include
+	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo
+	Sources
 
     )
 
@@ -85,6 +100,6 @@ include_directories (${PROJECT_INCLUDES})
 
 set (CMAKE_EXECUTABLE_SUFFIX ".elf")
 set (CMAKE_STATIC_LIBRARY_SUFFIX ".a")
-set (CMAKE_C_FLAGS "${MCPU} -std=gnu11 ${MFPU} ${MFLOAT_ABI} ${RUNTIME_LIBRARY} -mthumb -Wall -Werror")
+set (CMAKE_C_FLAGS "${MCPU} -std=gnu11 ${MFPU} ${MFLOAT_ABI} ${RUNTIME_LIBRARY} -DSTM32G431xx -DUSE_HAL_DRIVER -DUSE_STM32G4XX_NUCLEO_32 -mthumb -Wall -Werror")
 set (CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} ${RUNTIME_LIBRARY_SYSCALLS} -Wl,-Map=test.map -Wl,--gc-sections -static -Wl,--start-group -lc -lm -Wl,--end-group")
 set (CMAKE_ASM_FLAGS "${CMAKE_C_FLAGS} -x assembler-with-cpp")

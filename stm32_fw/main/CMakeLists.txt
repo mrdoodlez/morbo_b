@@ -33,6 +33,7 @@ set (MFLOAT_ABI_SOFTWARE              "-mfloat-abi=soft")
 set (MFLOAT_ABI_HARDWARE              "-mfloat-abi=hard")
 set (MFLOAT_ABI_MIX                   "-mfloat-abi=softfp")
 set (CUBE_DIR                         "/media/stanislav/projects/projects/STM32CubeG4")
+set (FREERTOS_DIR                     "/media/stanislav/projects/projects/FreeRTOS/FreeRTOS")
 
 #######################################################################
 
@@ -41,11 +42,10 @@ set (PROJECT_NAME             "morbo_a")
 set (PROJECT_TYPE             "exe")
 set (LINKER_SCRIPT            "../STM32G431KBTX_FLASH.ld")
 set (MCPU                     "-mcpu=Cortex-M4")
-set (MFPU                 "-mfpu=fpv4-sp-d16")
-set (MFLOAT_ABI               "")
+set (MFPU                     "-mfpu=fpv4-sp-d16")
+set (MFLOAT_ABI               "-mfloat-abi=hard")
 set (RUNTIME_LIBRARY          "--specs=nano.specs")
 set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
-
 
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
@@ -68,6 +68,12 @@ set (PROJECT_SOURCES
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
+	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c
+	${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
+	${FREERTOS_DIR}/Source/list.c
+	${FREERTOS_DIR}/Source/stream_buffer.c
+	${FREERTOS_DIR}/Source/tasks.c
+	${FREERTOS_DIR}/Source/timers.c
 	)
 
 set (PROJECT_DEFINES
@@ -82,7 +88,8 @@ set (PROJECT_INCLUDES
 	${CUBE_DIR}/Drivers/CMSIS/Include
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo
 	Sources
-
+	${FREERTOS_DIR}/Source/include
+	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
     )
 
 ############ MODIFY ACCORDING TO REQUIREMENTS) ########################

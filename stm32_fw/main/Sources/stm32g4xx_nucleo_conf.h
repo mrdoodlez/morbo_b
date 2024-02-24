@@ -1,6 +1,6 @@
 /**
   ******************************************************************************
-  * @file    stm32g4xx_nucleo_conf.h
+  * @file    stm32g4xx_nucleo_conf_template.h
   * @author  MCD Application Team
   * @brief   STM32G4xx_Nucleo board configuration file.
   ******************************************************************************
@@ -43,7 +43,7 @@
   * @{
   */
 /* Uncomment one of the board define below */
-#define USE_NUCLEO_32
+/* #define USE_NUCLEO_32 */
 /* #define USE_NUCLEO_64 */
 
 /* COM usage define */

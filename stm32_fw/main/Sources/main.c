@@ -1,156 +1,352 @@
-
-/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
-/** @addtogroup STM32G4xx-Nucleo_32_Demo
-  * @{
-  */
+#define TRANSMITTER_BOARD
 
-/** @addtogroup Led_Jumper
-  * @{
-  */
+UART_HandleTypeDef huart1;
 
-/* Private typedef -----------------------------------------------------------*/
-/* Private define ------------------------------------------------------------*/
-/* Private macro -------------------------------------------------------------*/
-/* Private variables ---------------------------------------------------------*/
-/* Private function prototypes -----------------------------------------------*/
-static void SystemClock_Config(void);
-static void PA12_Config(void);
+__IO ITStatus UartReady = RESET;
+__IO uint32_t VirtualUserButtonStatus = 0;  /* set to 1 after User set a button  */
 
-/* Private functions ---------------------------------------------------------*/
+/* Buffer used for transmission */
+uint8_t aTxBuffer[] = " ****UART_TwoBoards_ComIT****  ****UART_TwoBoards_ComIT****  ****UART_TwoBoards_ComIT**** ";
 
-/**
-  * @brief  Main program
-  * @param  None
-  * @retval None
-  */
+/* Buffer used for reception */
+uint8_t aRxBuffer[RXBUFFERSIZE];
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
+
+static uint16_t Buffercmp(uint8_t *pBuffer1, uint8_t *pBuffer2, uint16_t BufferLength);
+
 int main(void)
 {
+  /* USER CODE BEGIN 1 */
+#ifdef TRANSMITTER_BOARD
+  GPIO_InitTypeDef  GPIO_InitStruct;
+#endif
 
-  /* STM32G4xx HAL library initialization:
-       - Configure the Flash prefetch, Flash preread and Buffer caches
-       - Systick timer is configured by default as source of time base, but user
-             can eventually implement his proper time base source (a general purpose
-             timer for example or other time source), keeping in mind that Time base
-             duration should be kept 1ms since PPP_TIMEOUT_VALUEs are defined and
-             handled in milliseconds basis.
-       - Low Level Initialization
-     */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* Configure the System clock to have a frequency of 170 MHz */
+  /* Configure the system clock */
   SystemClock_Config();
 
-  /* Initialize the LED present on the Nucleo 32 Board */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART1_UART_Init();
+
+  /* Configure LED2 */
   BSP_LED_Init(LED2);
 
-  /* Configure PA.12 pin as input with Pull-up */
-  PA12_Config();
+#ifdef TRANSMITTER_BOARD
 
-  /* Infinite loop */
-  while(1)
-  {
-    /* If the state of PA.12 is low, then the jumper between PA.12 pin (CN4
-       pin 5) and GND (CN4 pin 4) is in place, else it is removed. */
-    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12) == GPIO_PIN_RESET)
-    {
-      BSP_LED_Toggle(LED2);
-      /* Wait for 500ms */
-      HAL_Delay(500);
-    }
-    else
-    {
-      BSP_LED_Toggle(LED2);
-      /* Wait for 100ms */
-      HAL_Delay(100);
-    }
-  }
-}
-
-/**
-  * @brief  System Clock Configuration
-  *         The system Clock is configured as follow :
-  *            System Clock source            = PLL (HSI)
-  *            SYSCLK(Hz)                     = 170000000
-  *            HCLK(Hz)                       = 170000000
-  *            AHB Prescaler                  = 1
-  *            APB1 Prescaler                 = 1
-  *            APB2 Prescaler                 = 1
-  *            HSI Frequency(Hz)              = 16000000
-  *            PLL_M                          = 4
-  *            PLL_N                          = 85
-  *            PLL_P                          = 2
-  *            PLL_Q                          = 2
-  *            PLL_R                          = 2
-  *            Flash Latency(WS)              = 8
-  * @param  None
-  * @retval None
-  */
-static void SystemClock_Config(void)
-{
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-
-  /* Enable voltage range 1 boost mode for frequency above 150 Mhz */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
-  __HAL_RCC_PWR_CLK_DISABLE();
-
-  /* Activate PLL with HSI as source */
-  RCC_OscInitStruct.OscillatorType      = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.HSIState            = RCC_HSI_ON;
-  RCC_OscInitStruct.PLL.PLLState        = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource       = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM            = RCC_PLLM_DIV4;
-  RCC_OscInitStruct.PLL.PLLN            = 85;
-  RCC_OscInitStruct.PLL.PLLP            = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ            = RCC_PLLQ_DIV2;
-  RCC_OscInitStruct.PLL.PLLR            = RCC_PLLR_DIV2;
-  if(HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    /* Initialization Error */
-    while(1);
-  }
-
-  /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
-     clocks dividers */
-  RCC_ClkInitStruct.ClockType           = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | \
-                                           RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
-  RCC_ClkInitStruct.SYSCLKSource        = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider       = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider      = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider      = RCC_HCLK_DIV1;
-  if(HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_8) != HAL_OK)
-  {
-    /* Initialization Error */
-    while(1);
-  }
-}
-
-/**
-  * @brief  Configure PA.12 pin as input with Pull-up.
-  * @param  None
-  * @retval None
-  */
-static void PA12_Config(void)
-{
-  GPIO_InitTypeDef   GPIO_InitStructure;
+  /* Configure PA.12 (Arduino D2) as input with External interrupt */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
 
   /* Enable GPIOA clock */
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /* Configure PA.12 pin as input with Pull-up */
-  GPIO_InitStructure.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStructure.Pull = GPIO_PULLUP;
-  GPIO_InitStructure.Pin  = GPIO_PIN_12;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStructure);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* Enable and set PA.12 (Arduino D2) EXTI Interrupt to the lowest priority */
+  NVIC_SetPriority((IRQn_Type)(EXTI15_10_IRQn), 0x03);
+  HAL_NVIC_EnableIRQ((IRQn_Type)(EXTI15_10_IRQn));
+
+  /* Wait for the user to set GPIOA to GND before starting the Communication.
+     In the meantime, LED2 is blinking */
+  while (VirtualUserButtonStatus == 0)
+  {
+    /* Toggle LED2*/
+    BSP_LED_Toggle(LED2);
+    HAL_Delay(100);
+  }
+
+  BSP_LED_Off(LED2);
+
+  /* The board sends the message and expects to receive it back */
+
+  /*##-1- Start the transmission process #####################################*/
+  /* While the UART in reception process, user can transmit data through
+     "aTxBuffer" buffer */
+  if (HAL_UART_Transmit_IT(&huart1, (uint8_t *)aTxBuffer, TXBUFFERSIZE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /*##-2- Wait for the end of the transfer ###################################*/
+  while (UartReady != SET)
+  {
+  }
+
+  /* Reset transmission flag */
+  UartReady = RESET;
+
+  /*##-3- Put UART peripheral in reception process ###########################*/
+  if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+#else
+
+  /* The board receives the message and sends it back */
+
+  /*##-1- Put UART peripheral in reception process ###########################*/
+  if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /*##-2- Wait for the end of the transfer ###################################*/
+  /* While waiting for message to come from the other board, LED2 is
+     blinking according to the following pattern: a double flash every half-second */
+  while (UartReady != SET)
+  {
+    BSP_LED_On(LED2);
+    HAL_Delay(100);
+    BSP_LED_Off(LED2);
+    HAL_Delay(100);
+    BSP_LED_On(LED2);
+    HAL_Delay(100);
+    BSP_LED_Off(LED2);
+    HAL_Delay(500);
+  }
+
+  /* Reset transmission flag */
+  UartReady = RESET;
+  BSP_LED_Off(LED2);
+
+  /*##-3- Start the transmission process #####################################*/
+  /* While the UART in reception process, user can transmit data through
+     "aTxBuffer" buffer */
+  if (HAL_UART_Transmit_IT(&huart1, (uint8_t *)aTxBuffer, TXBUFFERSIZE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+#endif /* TRANSMITTER_BOARD */
+
+  /*##-4- Wait for the end of the transfer ###################################*/
+  while (UartReady != SET)
+  {
+  }
+
+  /* Reset transmission flag */
+  UartReady = RESET;
+
+  /*##-5- Compare the sent and received buffers ##############################*/
+  if (Buffercmp((uint8_t *)aTxBuffer, (uint8_t *)aRxBuffer, RXBUFFERSIZE))
+  {
+    Error_Handler();
+  }
+
+  /* Turn on LED2 if test passes then enter infinite loop */
+  BSP_LED_On(LED2);
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage
+  */
+  HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV4;
+  RCC_OscInitStruct.PLL.PLLN = 85;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+ 
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+}
+
+/**
+  * @brief  Tx Transfer completed callback
+  * @param  UartHandle: UART handle.
+  * @note   This example shows a simple way to report end of IT Tx transfer, and
+  *         you can add your own implementation.
+  * @retval None
+  */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
+{
+  /* Set transmission flag: transfer complete */
+  UartReady = SET;
+
+}
+
+/**
+  * @brief  Rx Transfer completed callback
+  * @param  UartHandle: UART handle
+  * @note   This example shows a simple way to report end of DMA Rx transfer, and
+  *         you can add your own implementation.
+  * @retval None
+  */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
+{
+  /* Set transmission flag: transfer complete */
+  UartReady = SET;
+
+}
+
+/**
+  * @brief  UART error callbacks
+  * @param  UartHandle: UART handle
+  * @note   This example shows a simple way to report transfer error, and you can
+  *         add your own implementation.
+  * @retval None
+  */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *UartHandle)
+{
+  Error_Handler();
 }
 
 
-#ifdef  USE_FULL_ASSERT
+/**
+  * @brief EXTI line detection callbacks
+  * @param GPIO_Pin: Specifies the pins connected EXTI line
+  * @retval None
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_12)
+  {
+    VirtualUserButtonStatus = 1;
+  }
+}
+/**
+  * @brief  Compares two buffers.
+  * @param  pBuffer1, pBuffer2: buffers to be compared.
+  * @param  BufferLength: buffer's length
+  * @retval 0  : pBuffer1 identical to pBuffer2
+  *         >0 : pBuffer1 differs from pBuffer2
+  */
+static uint16_t Buffercmp(uint8_t *pBuffer1, uint8_t *pBuffer2, uint16_t BufferLength)
+{
+  while (BufferLength--)
+  {
+    if ((*pBuffer1) != *pBuffer2)
+    {
+      return BufferLength;
+    }
+    pBuffer1++;
+    pBuffer2++;
+  }
 
+  return 0;
+}
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  while (1)
+  {
+    /* Toggle LED2 for error */
+    BSP_LED_Toggle(LED2);
+    HAL_Delay(500);
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
@@ -160,6 +356,7 @@ static void PA12_Config(void)
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
+  /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
 
@@ -167,15 +364,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   while (1)
   {
   }
+  /* USER CODE END 6 */
 }
-#endif
-
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */
-
+#endif /* USE_FULL_ASSERT */
 

@@ -1,7 +1,14 @@
 #include "serial.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 static UART_HandleTypeDef huart1;
-__IO ITStatus UartReady = RESET;
+
+TaskHandle_t txTaskToNotify = NULL;
+const UBaseType_t txArrayIndex = 0;
+
+TaskHandle_t rxTaskToNotify = NULL;
+const UBaseType_t rxArrayIndex = 0;
 
 static void MX_USART1_UART_Init(void);
 
@@ -17,32 +24,57 @@ void Serial_Init(int dev)
 
 size_t Serial_Read(int dev, uint8_t *buff, size_t count)
 {
+	if (dev == 0)
+	{
+		rxTaskToNotify = xTaskGetCurrentTaskHandle();
+
+		if (HAL_UART_Receive_IT(&huart1, buff, count) != HAL_OK)
+		{
+			Error_Handler();
+		}
+
+		const TickType_t xMaxBlockTime = 0xffffffff;
+		uint32_t ulNotificationValue
+			= ulTaskNotifyTakeIndexed(rxArrayIndex, pdTRUE, xMaxBlockTime);
+
+		if( ulNotificationValue == 1 )
+			return count;
+	}
+
 	return 0;
+
 }
 
 size_t Serial_Write(int dev, uint8_t *buff, size_t count)
-{
+{	
 	if (dev == 0)
 	{
+		txTaskToNotify = xTaskGetCurrentTaskHandle();
+
 		if (HAL_UART_Transmit_IT(&huart1, buff, count) != HAL_OK)
 		{
 			Error_Handler();
 		}
-		while (UartReady != SET);
-		UartReady = RESET;
+
+		const TickType_t xMaxBlockTime = pdMS_TO_TICKS(200); // TODO: use flags or else
+		uint32_t ulNotificationValue
+			= ulTaskNotifyTakeIndexed(txArrayIndex, pdTRUE, xMaxBlockTime);
+
+		if( ulNotificationValue == 1 )
+			return count;
 	}
 
-	return count;
+	return 0;
 }
 
 /******************************************************************************/
 
 /**
-  * @brief This function handles USART1 global interrupt
-  *        USART1 wake-up interrupt through EXTI line 25.
-  */
+ * @brief This function handles USART1 global interrupt
+ *        USART1 wake-up interrupt through EXTI line 25.
+ */
 void USART1_IRQHandler(void)
-{ 
+{
 	HAL_UART_IRQHandler(&huart1);
 }
 
@@ -126,7 +158,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 		/* USART1 interrupt Init */
-		HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
+		HAL_NVIC_SetPriority(USART1_IRQn,
+			configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
 		HAL_NVIC_EnableIRQ(USART1_IRQn);
 	}
 }
@@ -145,7 +178,6 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
 		__HAL_RCC_USART1_FORCE_RESET();
 		__HAL_RCC_USART1_RELEASE_RESET();
 
-
 		/* Peripheral clock disable */
 		__HAL_RCC_USART1_CLK_DISABLE();
 
@@ -156,7 +188,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
 		HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
 
 		/* USART1 interrupt DeInit */
-		HAL_NVIC_DisableIRQ(USART1_IRQn);	
+		HAL_NVIC_DisableIRQ(USART1_IRQn);
 	}
 }
 
@@ -169,8 +201,16 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
-	/* Set transmission flag: transfer complete */
-	UartReady = SET;
+	if (txTaskToNotify != 0)
+	{
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+		vTaskNotifyGiveIndexedFromISR(txTaskToNotify,
+								  txArrayIndex,
+								  &xHigherPriorityTaskWoken);
+		txTaskToNotify = NULL;
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	}
 }
 
 /**
@@ -182,8 +222,16 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
-	/* Set transmission flag: transfer complete */
-	UartReady = SET;
+	if (rxTaskToNotify != 0)
+	{
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+		vTaskNotifyGiveIndexedFromISR(rxTaskToNotify,
+								  rxArrayIndex,
+								  &xHigherPriorityTaskWoken);
+		rxTaskToNotify = NULL;
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	}
 }
 
 /**

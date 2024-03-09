@@ -11,8 +11,6 @@ static void MX_GPIO_Init(void);
 
 int main(void)
 {
-	GPIO_InitTypeDef GPIO_InitStruct;
-
 	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
 	HAL_Init();
 
@@ -24,20 +22,12 @@ int main(void)
 
 	/* Configure LED2 */
 	BSP_LED_Init(LED2);
-
-	/* Configure PA.12 (Arduino D2) as input with External interrupt */
-	GPIO_InitStruct.Pin = GPIO_PIN_12;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-
+	
 	/* Enable GPIOA clock */
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	/* Enable and set PA.12 (Arduino D2) EXTI Interrupt to the lowest priority */
-	NVIC_SetPriority((IRQn_Type)(EXTI15_10_IRQn), 0x03);
-	HAL_NVIC_EnableIRQ((IRQn_Type)(EXTI15_10_IRQn));
+	/* Ensure all priority bits are assigned as preemption priority bits. */
+	HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
 	Serial_Init(0);
 

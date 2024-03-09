@@ -50,12 +50,14 @@ set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
 	Startup/startup_stm32g431kbtx.s
-	Sources/main.c
-	Sources/syscalls.c
-	Sources/sysmem.c
-	Sources/stm32g4xx_it.c
-	Sources/system_stm32g4xx.c
-	Sources/stm32g4xx_hal_msp.c
+	Sources/platform/main.c
+	Sources/platform/syscalls.c
+	Sources/platform/sysmem.c
+	Sources/platform/stm32g4xx_it.c
+	Sources/platform/system_stm32g4xx.c
+	Sources/platform/stm32g4xx_hal_msp.c
+	Sources/drivers/serial.c
+	Sources/app/controller.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_cortex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c
@@ -88,6 +90,9 @@ set (PROJECT_INCLUDES
 	${CUBE_DIR}/Drivers/CMSIS/Include
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo
 	Sources
+	Sources/platform
+	Sources/drivers
+	Sources/app
 	${FREERTOS_DIR}/Source/include
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
     )

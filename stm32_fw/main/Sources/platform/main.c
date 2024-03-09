@@ -1,53 +1,17 @@
 #include "main.h"
-
-/* Kernel includes. */
+#include "serial.h"
+#include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define TRANSMITTER_BOARD
-
-UART_HandleTypeDef huart1;
-
-__IO ITStatus UartReady = RESET;
 __IO uint32_t VirtualUserButtonStatus = 0; /* set to 1 after User set a button  */
-
-/* Buffer used for transmission */
-uint8_t aTxBuffer[] = "Hello from Embedded World!\n";
-
-/* Buffer used for reception */
-uint8_t aRxBuffer[RXBUFFERSIZE];
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
-
-static uint16_t Buffercmp(uint8_t *pBuffer1, uint8_t *pBuffer2, uint16_t BufferLength);
-
-static void LedTask()
-{
-	while(1)
-	{
-		BSP_LED_Toggle(LED2);
-
-		if (HAL_UART_Transmit_IT(&huart1, (uint8_t *)aTxBuffer, TXBUFFERSIZE) != HAL_OK)
-		{
-			Error_Handler();
-		}
-
-		while (UartReady != SET);
-		UartReady = RESET;
-		
-		vTaskDelay(1000);
-	}
-}
-
 
 int main(void)
 {
-	/* USER CODE BEGIN 1 */
-#ifdef TRANSMITTER_BOARD
 	GPIO_InitTypeDef GPIO_InitStruct;
-#endif
 
 	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
 	HAL_Init();
@@ -57,12 +21,9 @@ int main(void)
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	MX_USART1_UART_Init();
 
 	/* Configure LED2 */
 	BSP_LED_Init(LED2);
-
-#ifdef TRANSMITTER_BOARD
 
 	/* Configure PA.12 (Arduino D2) as input with External interrupt */
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -78,116 +39,16 @@ int main(void)
 	NVIC_SetPriority((IRQn_Type)(EXTI15_10_IRQn), 0x03);
 	HAL_NVIC_EnableIRQ((IRQn_Type)(EXTI15_10_IRQn));
 
-	xTaskHandle hLedTask;
-	xTaskCreate((TaskFunction_t)LedTask, (const char*)"LED", 100, NULL, 3, &hLedTask);
+	Serial_Init(0);
+
+	xTaskHandle hMainTask;
+	xTaskCreate((TaskFunction_t)Controller_Task, (const char *)"MAIN",
+		100, NULL, 3, &hMainTask);
 
 	vTaskStartScheduler();
 
 	while (1)
 		;
-
-	/* Wait for the user to set GPIOA to GND before starting the Communication.
-		 In the meantime, LED2 is blinking */
-	while (VirtualUserButtonStatus == 0)
-	{
-		/* Toggle LED2*/
-		BSP_LED_Toggle(LED2);
-		HAL_Delay(100);
-	}
-
-	BSP_LED_Off(LED2);
-
-	/* The board sends the message and expects to receive it back */
-
-	/*##-1- Start the transmission process #####################################*/
-	/* While the UART in reception process, user can transmit data through
-		 "aTxBuffer" buffer */
-	if (HAL_UART_Transmit_IT(&huart1, (uint8_t *)aTxBuffer, TXBUFFERSIZE) != HAL_OK)
-	{
-		Error_Handler();
-	}
-
-	/*##-2- Wait for the end of the transfer ###################################*/
-	while (UartReady != SET)
-	{
-	}
-
-	/* Reset transmission flag */
-	UartReady = RESET;
-
-	/*##-3- Put UART peripheral in reception process ###########################*/
-	if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
-	{
-		Error_Handler();
-	}
-
-#else
-
-	/* The board receives the message and sends it back */
-
-	/*##-1- Put UART peripheral in reception process ###########################*/
-	if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
-	{
-		Error_Handler();
-	}
-
-	/*##-2- Wait for the end of the transfer ###################################*/
-	/* While waiting for message to come from the other board, LED2 is
-		 blinking according to the following pattern: a double flash every half-second */
-	while (UartReady != SET)
-	{
-		BSP_LED_On(LED2);
-		HAL_Delay(100);
-		BSP_LED_Off(LED2);
-		HAL_Delay(100);
-		BSP_LED_On(LED2);
-		HAL_Delay(100);
-		BSP_LED_Off(LED2);
-		HAL_Delay(500);
-	}
-
-	/* Reset transmission flag */
-	UartReady = RESET;
-	BSP_LED_Off(LED2);
-
-	/*##-3- Start the transmission process #####################################*/
-	/* While the UART in reception process, user can transmit data through
-		 "aTxBuffer" buffer */
-	if (HAL_UART_Transmit_IT(&huart1, (uint8_t *)aTxBuffer, TXBUFFERSIZE) != HAL_OK)
-	{
-		Error_Handler();
-	}
-
-#endif /* TRANSMITTER_BOARD */
-
-	/*##-4- Wait for the end of the transfer ###################################*/
-	while (UartReady != SET)
-	{
-	}
-
-	/* Reset transmission flag */
-	UartReady = RESET;
-
-	/*##-5- Compare the sent and received buffers ##############################*/
-	if (Buffercmp((uint8_t *)aTxBuffer, (uint8_t *)aRxBuffer, RXBUFFERSIZE))
-	{
-		Error_Handler();
-	}
-
-	/* Turn on LED2 if test passes then enter infinite loop */
-	BSP_LED_On(LED2);
-
-	/* USER CODE END 2 */
-
-	/* Infinite loop */
-	/* USER CODE BEGIN WHILE */
-	while (1)
-	{
-		/* USER CODE END WHILE */
-
-		/* USER CODE BEGIN 3 */
-	}
-	/* USER CODE END 3 */
 }
 
 /**
@@ -234,42 +95,6 @@ void SystemClock_Config(void)
 }
 
 /**
- * @brief USART1 Initialization Function
- * @param None
- * @retval None
- */
-static void MX_USART1_UART_Init(void)
-{
-	huart1.Instance = USART1;
-	huart1.Init.BaudRate = 9600;
-	huart1.Init.WordLength = UART_WORDLENGTH_8B;
-	huart1.Init.StopBits = UART_STOPBITS_1;
-	huart1.Init.Parity = UART_PARITY_NONE;
-	huart1.Init.Mode = UART_MODE_TX_RX;
-	huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-	huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-	huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-	huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-	huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-	if (HAL_UART_Init(&huart1) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
-	{
-		Error_Handler();
-	}
-}
-
-/**
  * @brief GPIO Initialization Function
  * @param None
  * @retval None
@@ -279,44 +104,6 @@ static void MX_GPIO_Init(void)
 
 	/* GPIO Ports Clock Enable */
 	__HAL_RCC_GPIOA_CLK_ENABLE();
-}
-
-/**
- * @brief  Tx Transfer completed callback
- * @param  UartHandle: UART handle.
- * @note   This example shows a simple way to report end of IT Tx transfer, and
- *         you can add your own implementation.
- * @retval None
- */
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
-{
-	/* Set transmission flag: transfer complete */
-	UartReady = SET;
-}
-
-/**
- * @brief  Rx Transfer completed callback
- * @param  UartHandle: UART handle
- * @note   This example shows a simple way to report end of DMA Rx transfer, and
- *         you can add your own implementation.
- * @retval None
- */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
-{
-	/* Set transmission flag: transfer complete */
-	UartReady = SET;
-}
-
-/**
- * @brief  UART error callbacks
- * @param  UartHandle: UART handle
- * @note   This example shows a simple way to report transfer error, and you can
- *         add your own implementation.
- * @retval None
- */
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *UartHandle)
-{
-	Error_Handler();
 }
 
 /**
@@ -330,27 +117,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	{
 		VirtualUserButtonStatus = 1;
 	}
-}
-/**
- * @brief  Compares two buffers.
- * @param  pBuffer1, pBuffer2: buffers to be compared.
- * @param  BufferLength: buffer's length
- * @retval 0  : pBuffer1 identical to pBuffer2
- *         >0 : pBuffer1 differs from pBuffer2
- */
-static uint16_t Buffercmp(uint8_t *pBuffer1, uint8_t *pBuffer2, uint16_t BufferLength)
-{
-	while (BufferLength--)
-	{
-		if ((*pBuffer1) != *pBuffer2)
-		{
-			return BufferLength;
-		}
-		pBuffer1++;
-		pBuffer2++;
-	}
-
-	return 0;
 }
 
 /**

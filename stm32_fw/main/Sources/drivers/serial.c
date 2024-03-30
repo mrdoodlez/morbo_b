@@ -4,11 +4,11 @@
 
 static UART_HandleTypeDef huart1;
 
-TaskHandle_t txTaskToNotify = NULL;
-const UBaseType_t txArrayIndex = 0;
+static TaskHandle_t txTaskToNotify = NULL;
+static const UBaseType_t txArrayIndex = 0;
 
-TaskHandle_t rxTaskToNotify = NULL;
-const UBaseType_t rxArrayIndex = 0;
+static TaskHandle_t rxTaskToNotify = NULL;
+static const UBaseType_t rxArrayIndex = 0;
 
 static void MX_USART1_UART_Init(void);
 

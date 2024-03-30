@@ -22,8 +22,12 @@ def main():
     while True:
         cmd = CMD_PING
         len = LEN_PING
-        
-        ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC) 
+
+        if seq % 5  == 1:
+            ping = struct.pack('<2sHHH', b'mb', cmd, len, seq)
+        else:
+            ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC) 
+
         port.write(ping)
 
         print("ping #" + str(seq))

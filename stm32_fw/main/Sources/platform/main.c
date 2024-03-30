@@ -1,5 +1,6 @@
 #include "main.h"
 #include "serial.h"
+#include "i2c.h"
 #include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -30,6 +31,8 @@ int main(void)
 	HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
 	Serial_Init(0);
+
+	I2C_Init(0);
 
 	xTaskHandle hMainTask;
 	xTaskCreate((TaskFunction_t)Controller_Task, (const char *)"MAIN",

@@ -4,10 +4,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-__IO uint32_t VirtualUserButtonStatus = 0; /* set to 1 after User set a button  */
-
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+
+volatile int _dbg = 0;
 
 int main(void)
 {
@@ -103,10 +103,7 @@ static void MX_GPIO_Init(void)
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if (GPIO_Pin == GPIO_PIN_12)
-	{
-		VirtualUserButtonStatus = 1;
-	}
+
 }
 
 /**

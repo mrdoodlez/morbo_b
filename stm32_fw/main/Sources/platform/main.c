@@ -32,7 +32,7 @@ int main(void)
 
 	Serial_Init(0);
 
-	I2C_Init(0);
+	I2C_Init(1);
 
 	xTaskHandle hMainTask;
 	xTaskCreate((TaskFunction_t)Controller_Task, (const char *)"MAIN",

@@ -58,6 +58,7 @@ set (PROJECT_SOURCES
 	Sources/platform/stm32g4xx_hal_msp.c
 	Sources/drivers/serial.c
 	Sources/drivers/i2c.c
+	Sources/drivers/pca9685.c
 	Sources/app/controller.c
 	Sources/app/host_interface.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			

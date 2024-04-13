@@ -23,7 +23,7 @@ def main():
         cmd = CMD_PING
         len = LEN_PING
 
-        if seq % 5  == 1:
+        if 0: #seq % 5  == 1:
             ping = struct.pack('<2sHHH', b'mb', cmd, len, seq)
         else:
             ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC) 

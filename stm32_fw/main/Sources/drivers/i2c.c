@@ -2,7 +2,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define I2C_ADDRESS 0x3E
+#define I2C_ADDRESS 	0x3E
+#define I2C_LBUF_LEN	256
+
+extern int _dbg;
 
 typedef enum
 {
@@ -18,6 +21,8 @@ static struct
 	TaskHandle_t txTaskToNotify;
 	TaskHandle_t rxTaskToNotify;
 	I2C_Transaction_t t;
+
+	uint8_t lbuf[I2C_LBUF_LEN];
 } _i2cContext;
 
 static const UBaseType_t txArrayIndex = 0;
@@ -37,22 +42,56 @@ void I2C_Init(int dev)
 	_i2cContext.t = I2C_Transaction_None;
 }
 
-size_t I2C_Read(int dev, uint8_t addr, uint16_t regAddr, uint8_t *buff, size_t count)
+size_t I2C_Read(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
+	uint8_t *buff, size_t count)
 {
 	return 0;
 }
 
-size_t I2C_Write(int dev, uint8_t addr, uint16_t regAddr, uint8_t *buff, size_t count)
+size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
+	uint8_t *buff, size_t count)
 {
 	if (dev == 1)
 	{
+		size_t addrLen = 0;
+		switch(alen)
+		{
+			case I2C_RegAddrLen_8:
+				break;
+			case I2C_RegAddrLen_16:
+				break;
+			case I2C_RegAddrLen_32:
+				break;
+			case I2C_RegAddrLen_0:
+			default:
+				break;
+		}
+
 		if (HAL_I2C_GetState(&_i2cContext.hi2c1) == HAL_I2C_STATE_READY)
 		{
 			_i2cContext.txTaskToNotify = xTaskGetCurrentTaskHandle();
 
-			if (HAL_I2C_Master_Transmit_IT(&_i2cContext.hi2c1, addr, buff, count) != HAL_OK)
+			if (addrLen == 0)
 			{
-				Error_Handler();
+				if (HAL_I2C_Master_Transmit_IT(&_i2cContext.hi2c1, addr,
+					buff, count) != HAL_OK)
+				{
+					Error_Handler();
+				}
+			}
+			else
+			{
+				for (uint32_t i = 0; i < alen; i++)
+					_i2cContext.lbuf[i] = ((uint8_t*)&regAddr)[i];
+
+				for (uint32_t i = 0; i < count; i++)
+					_i2cContext.lbuf[addrLen + i] = buff[i];
+
+				if (HAL_I2C_Master_Transmit_IT(&_i2cContext.hi2c1, addr,
+					_i2cContext.lbuf, addrLen + count) != HAL_OK)
+				{
+					Error_Handler();
+				}
 			}
 
 			_i2cContext.t = I2C_Transaction_Write;
@@ -83,7 +122,7 @@ static void MX_I2C1_Init(void)
 {
 
 	_i2cContext.hi2c1.Instance = I2C1;
-	_i2cContext.hi2c1.Init.Timing = 0x00303D5B;
+	_i2cContext.hi2c1.Init.Timing = 0x30A0A7FB;
 	_i2cContext.hi2c1.Init.OwnAddress1 = I2C_ADDRESS;
 	_i2cContext.hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
 	_i2cContext.hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -105,8 +144,6 @@ static void MX_I2C1_Init(void)
 	{
 		Error_Handler();
 	}
-
-	__HAL_SYSCFG_FASTMODEPLUS_ENABLE(I2C_FASTMODEPLUS_I2C1);
 }
 
 /******************************************************************************/
@@ -154,7 +191,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 		GPIO_InitStruct.Pin = GPIO_PIN_15;
 		GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
 		GPIO_InitStruct.Pull = GPIO_PULLUP;
-		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 		GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
 		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -163,7 +200,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 		GPIO_InitStruct.Pin = GPIO_PIN_7;
 		GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
 		GPIO_InitStruct.Pull = GPIO_PULLUP;
-		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 		GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
 		HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -172,9 +209,12 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 		__HAL_RCC_I2C1_CLK_ENABLE();
 
 		/* I2C1 interrupt Init */
-		HAL_NVIC_SetPriority(I2C1_EV_IRQn, 0, 0);
+		HAL_NVIC_SetPriority(I2C1_EV_IRQn,
+			configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
 		HAL_NVIC_EnableIRQ(I2C1_EV_IRQn);
-		HAL_NVIC_SetPriority(I2C1_ER_IRQn, 0, 0);
+
+		HAL_NVIC_SetPriority(I2C1_ER_IRQn,
+			configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
 		HAL_NVIC_EnableIRQ(I2C1_ER_IRQn);
 	}
 }

@@ -3,7 +3,7 @@
 #include "task.h"
 
 #define I2C_ADDRESS 	0x3E
-#define I2C_LBUF_LEN	256
+#define I2C_LBUF_LEN	32
 
 extern int _dbg;
 
@@ -45,6 +45,70 @@ void I2C_Init(int dev)
 size_t I2C_Read(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 	uint8_t *buff, size_t count)
 {
+	if (dev == 1)
+	{
+		if (HAL_I2C_GetState(&_i2cContext.hi2c1) == HAL_I2C_STATE_READY)
+		{
+			size_t addrLen = 0;
+			switch(alen)
+			{
+				case I2C_RegAddrLen_8:
+					addrLen = 1;
+					break;
+				case I2C_RegAddrLen_16:
+					addrLen = 2;
+					break;
+				case I2C_RegAddrLen_32:
+					addrLen = 4;
+					break;
+				case I2C_RegAddrLen_0:
+				default:
+					break;
+			}
+
+			if (addrLen != 0)
+			{
+				_i2cContext.txTaskToNotify = xTaskGetCurrentTaskHandle();
+
+				if (HAL_I2C_Master_Transmit_IT(&_i2cContext.hi2c1, addr,
+					(uint8_t*)&regAddr, addrLen) != HAL_OK)
+				{
+					Error_Handler();
+				}
+
+				_i2cContext.t = I2C_Transaction_Read_AddrSet;
+
+				const TickType_t xMaxBlockTime = pdMS_TO_TICKS(200); // TODO: use flags or else
+				uint32_t ulNotificationValue
+					= ulTaskNotifyTakeIndexed(txArrayIndex, pdTRUE, xMaxBlockTime);
+
+				if( ulNotificationValue != 1 )
+				{
+					Error_Handler();
+				}
+			}
+
+			_i2cContext.txTaskToNotify = xTaskGetCurrentTaskHandle();
+
+			if (HAL_I2C_Master_Receive_IT(&_i2cContext.hi2c1, addr,
+					buff, count) != HAL_OK)
+			{
+				Error_Handler();
+			}
+
+			_i2cContext.t = I2C_Transaction_Read;
+
+			const TickType_t xMaxBlockTime = pdMS_TO_TICKS(200); // TODO: use flags or else
+			uint32_t ulNotificationValue
+				= ulTaskNotifyTakeIndexed(txArrayIndex, pdTRUE, xMaxBlockTime);
+
+			_i2cContext.t = I2C_Transaction_None;
+
+			if( ulNotificationValue == 1 )
+				return count;
+		}
+	}
+
 	return 0;
 }
 
@@ -53,22 +117,25 @@ size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 {
 	if (dev == 1)
 	{
-		size_t addrLen = 0;
-		switch(alen)
-		{
-			case I2C_RegAddrLen_8:
-				break;
-			case I2C_RegAddrLen_16:
-				break;
-			case I2C_RegAddrLen_32:
-				break;
-			case I2C_RegAddrLen_0:
-			default:
-				break;
-		}
-
 		if (HAL_I2C_GetState(&_i2cContext.hi2c1) == HAL_I2C_STATE_READY)
 		{
+			size_t addrLen = 0;
+			switch(alen)
+			{
+				case I2C_RegAddrLen_8:
+					addrLen = 1;
+					break;
+				case I2C_RegAddrLen_16:
+					addrLen = 2;
+					break;
+				case I2C_RegAddrLen_32:
+					addrLen = 4;
+					break;
+				case I2C_RegAddrLen_0:
+				default:
+					break;
+			}
+
 			_i2cContext.txTaskToNotify = xTaskGetCurrentTaskHandle();
 
 			if (addrLen == 0)
@@ -81,7 +148,7 @@ size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 			}
 			else
 			{
-				for (uint32_t i = 0; i < alen; i++)
+				for (uint32_t i = 0; i < addrLen; i++)
 					_i2cContext.lbuf[i] = ((uint8_t*)&regAddr)[i];
 
 				for (uint32_t i = 0; i < count; i++)
@@ -105,7 +172,6 @@ size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 			if( ulNotificationValue == 1 )
 				return count;
 		}
-
 	}
 
 	return 0;

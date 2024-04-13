@@ -24,21 +24,21 @@
 #define PCA9685_TESTMODE						0xFF /**< defines the test mode to be entered */
 
 // MODE1 bits
-#define MODE1_ALLCAL							0x01  /**< respond to LED All Call I2C-bus address */
-#define MODE1_SUB3								0x02    /**< respond to I2C-bus subaddress 3 */
-#define MODE1_SUB2								0x04    /**< respond to I2C-bus subaddress 2 */
-#define MODE1_SUB1								0x08    /**< respond to I2C-bus subaddress 1 */
-#define MODE1_SLEEP								0x10   /**< Low power mode. Oscillator off */
-#define MODE1_AI								0x20      /**< Auto-Increment enabled */
-#define MODE1_EXTCLK							0x40  /**< Use EXTCLK pin clock */
+#define MODE1_ALLCAL							0x01 /**< respond to LED All Call I2C-bus address */
+#define MODE1_SUB3								0x02 /**< respond to I2C-bus subaddress 3 */
+#define MODE1_SUB2								0x04 /**< respond to I2C-bus subaddress 2 */
+#define MODE1_SUB1								0x08 /**< respond to I2C-bus subaddress 1 */
+#define MODE1_SLEEP								0x10 /**< Low power mode. Oscillator off */
+#define MODE1_AI								0x20 /**< Auto-Increment enabled */
+#define MODE1_EXTCLK							0x40 /**< Use EXTCLK pin clock */
 #define MODE1_RESTART							0x80 /**< Restart enabled */
 
 // MODE2 bits
 #define MODE2_OUTNE_0							0x01 /**< Active LOW output enable input */
 #define MODE2_OUTNE_1							0x02 /**< Active LOW output enable input - high impedience */
 #define MODE2_OUTDRV							0x04 /**< totem pole structure vs open-drain */
-#define MODE2_OCH								0x08    /**< Outputs change on ACK vs STOP */
-#define MODE2_INVRT								0x10  /**< Output logic state inverted */
+#define MODE2_OCH								0x08 /**< Outputs change on ACK vs STOP */
+#define MODE2_INVRT								0x10 /**< Output logic state inverted */
 
 #define FREQUENCY_OSCILLATOR					25000000 /**< Int. osc. frequency in datasheet */
 
@@ -98,6 +98,15 @@ void PCA9685_SetExtClk(uint8_t prescale)
 }
 
 /*!
+ *  @brief  Sends a reset command to the PCA9685 chip over I2C
+ */
+void PCA9685_Reset()
+{
+	PCA9685_Write8(PCA9685_MODE1, MODE1_RESTART);
+	vTaskDelay(10);
+}
+
+/*!
  *  @brief  Setups the I2C interface and hardware
  *  @param  prescale
  *          Sets External Clock (Optional)
@@ -107,6 +116,8 @@ int PCA9685_Init(uint8_t i2cDev, uint8_t i2cAddr, uint8_t prescale)
 {
 	_ctx.i2cAddr = i2cAddr;
 	_ctx.i2c = i2cDev;
+
+	PCA9685_Reset();
 
 	// set the default internal frequency
 	PCA9685_SetOscillatorFrequency(FREQUENCY_OSCILLATOR);
@@ -122,15 +133,6 @@ int PCA9685_Init(uint8_t i2cDev, uint8_t i2cAddr, uint8_t prescale)
 	}
 
 	return 0;
-}
-
-/*!
- *  @brief  Sends a reset command to the PCA9685 chip over I2C
- */
-void PCA9685_Reset()
-{
-	PCA9685_Write8(PCA9685_MODE1, MODE1_RESTART);
-	vTaskDelay(10);
 }
 
 /*!
@@ -175,8 +177,8 @@ void PCA9685_SetPWMFreq(float freq)
 
 	uint8_t oldmode = PCA9685_Read8(PCA9685_MODE1);
 	uint8_t newmode = (oldmode & ~MODE1_RESTART) | MODE1_SLEEP; // sleep
-	PCA9685_Write8(PCA9685_MODE1, newmode);                             // go to sleep
-	PCA9685_Write8(PCA9685_PRESCALE, prescale);                         // set the prescaler
+	PCA9685_Write8(PCA9685_MODE1, newmode);                     // go to sleep
+	PCA9685_Write8(PCA9685_PRESCALE, prescale);                 // set the prescaler
 	PCA9685_Write8(PCA9685_MODE1, oldmode);
 	vTaskDelay(5);
 	// This sets the MODE1 register to turn on auto increment.
@@ -246,7 +248,7 @@ uint8_t PCA9685_SetPWM(uint8_t num, uint16_t on, uint16_t off)
 	buffer[3] = off;
 	buffer[4] = off >> 8;
 
-	return I2C_Read(_ctx.i2c, _ctx.i2cAddr, 0,
+	return I2C_Write(_ctx.i2c, _ctx.i2cAddr, 0,
 		I2C_RegAddrLen_0, buffer, 5) == 5 ? 0 : -1;
 }
 

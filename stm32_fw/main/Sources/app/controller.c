@@ -3,12 +3,14 @@
 #include "task.h"
 #include "host_interface.h"
 #include "pca9685.h"
+#include "imu_reader.h"
 
 #define PCA9685_BUS			1
 #define PCA9685_ADDR		0x80
 
-int _cmpltCount = 0;
+#define IMU_BUS				1
 
+int _cmpltCount = 0;
 
 void Controller_Task()
 {
@@ -19,6 +21,20 @@ void Controller_Task()
 	}
 
 	PCA9685_Init(PCA9685_BUS, PCA9685_ADDR, 0);
+
+	IMU_Init(IMU_BUS);
+
+	while (1)
+	{
+		IMU_Read();
+		vTaskDelay(10);
+	}
+
+	while (1)
+	{
+		// do nothing (yet)
+		vTaskDelay(1000);
+	}
 
 	PCA9685_SetPWMFreq(1600);
 

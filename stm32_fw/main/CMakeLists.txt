@@ -61,6 +61,7 @@ set (PROJECT_SOURCES
 	Sources/drivers/pca9685.c
 	Sources/app/controller.c
 	Sources/app/host_interface.c
+	Sources/app/imu_reader.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_cortex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c

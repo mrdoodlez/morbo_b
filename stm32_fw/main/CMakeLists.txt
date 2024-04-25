@@ -34,6 +34,7 @@ set (MFLOAT_ABI_HARDWARE              "-mfloat-abi=hard")
 set (MFLOAT_ABI_MIX                   "-mfloat-abi=softfp")
 set (CUBE_DIR                         "/media/stanislav/projects/projects/STM32CubeG4")
 set (FREERTOS_DIR                     "/media/stanislav/projects/projects/FreeRTOS/FreeRTOS")
+set (MEMS_DIR                         "/media/stanislav/projects/projects/X-CUBE-MEMS1")
 
 #######################################################################
 
@@ -46,6 +47,7 @@ set (MFPU                     "-mfpu=fpv4-sp-d16")
 set (MFLOAT_ABI               "-mfloat-abi=hard")
 set (RUNTIME_LIBRARY          "--specs=nano.specs")
 set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
+set (DI_LIB                   "/media/stanislav/projects/projects/X-CUBE-MEMS1/Middlewares/ST/STM32_MotionDI_Library/Lib/MotionDI_CM4F_wc32_ot_hard.a")
 
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
@@ -76,18 +78,19 @@ set (PROJECT_SOURCES
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
-	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c
-	${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
+	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c	
 	${FREERTOS_DIR}/Source/list.c
 	${FREERTOS_DIR}/Source/stream_buffer.c
 	${FREERTOS_DIR}/Source/tasks.c
 	${FREERTOS_DIR}/Source/timers.c
+	${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh.c
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh_reg.c
 	)
 
 set (PROJECT_DEFINES
 	# LIST COMPILER DEFINITIONS HERE
-
-    )
+	)
 
 set (PROJECT_INCLUDES
 	# LIST INCLUDE DIRECTORIES HERE
@@ -101,7 +104,9 @@ set (PROJECT_INCLUDES
 	Sources/app
 	${FREERTOS_DIR}/Source/include
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
-    )
+	${MEMS_DIR}/Middlewares/ST/STM32_MotionDI_Library/Inc
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh
+	)
 
 ############ MODIFY ACCORDING TO REQUIREMENTS) ########################
 
@@ -114,6 +119,7 @@ enable_language(ASM)
 if (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_EXECUTABLE})
   add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
   add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>)
+  target_link_libraries(${PROJECT_NAME} ${DI_LIB})
 elseif (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_STATIC_LIBRARY})
   add_library(${PROJECT_NAME} ${PROJECT_SOURCES})
 endif()

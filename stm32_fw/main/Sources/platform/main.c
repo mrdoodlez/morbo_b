@@ -5,10 +5,15 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#define MAIN_STACK_SIZE		2280
+
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 
 volatile int _dbg = 0;
+
+static StaticTask_t _mainTaskBuffer;
+StackType_t _mainTaskStack[MAIN_STACK_SIZE];
 
 int main(void)
 {
@@ -34,9 +39,9 @@ int main(void)
 
 	I2C_Init(1);
 
-	xTaskHandle hMainTask;
-	xTaskCreate((TaskFunction_t)Controller_Task, (const char *)"MAIN",
-		100, NULL, 3, &hMainTask);
+	xTaskCreateStatic((TaskFunction_t)Controller_Task,
+		(const char *)"MAIN", MAIN_STACK_SIZE, NULL, 3,
+		_mainTaskStack, &_mainTaskBuffer);
 
 	vTaskStartScheduler();
 

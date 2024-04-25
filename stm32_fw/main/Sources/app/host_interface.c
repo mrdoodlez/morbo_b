@@ -12,6 +12,8 @@
 
 #define HIP_MSG_PING		0x0001
 
+#define HIP_STACK_SIZE		128
+
 extern int _dbg;
 
 typedef struct
@@ -46,7 +48,9 @@ static struct
 
 /******************************************************************************/
 
-static TaskHandle_t _hListener;
+static TaskHandle_t _hListener = NULL;
+static StaticTask_t _hipTaskBuffer;
+static StackType_t _hipTaskStack[HIP_STACK_SIZE];
 
 static void _HostIface_Listen();
 static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd);
@@ -54,9 +58,10 @@ static void _HostIface_HandlePing(const HIP_Ping_t* cmd);
 
 int HostIface_Start()
 {
-	if (xTaskCreate((TaskFunction_t)_HostIface_Listen, (const char *)"HIP_LSTNR",
-			100, NULL, 3, &_hListener) != pdPASS)
-		return -1;
+	if ((_hListener = xTaskCreateStatic((TaskFunction_t)_HostIface_Listen,
+			(const char *)"HIP_LSTNR", HIP_STACK_SIZE, NULL, 3,
+			_hipTaskStack, &_hipTaskBuffer)) == NULL)
+		return -1;	
 
 	return 0;
 }

@@ -5,15 +5,18 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define MAIN_STACK_SIZE		2280
+#define MAIN_STACK_SIZE 1024
 
-void SystemClock_Config(void);
+static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_CRC_Init(void);
 
 volatile int _dbg = 0;
 
+static CRC_HandleTypeDef hcrc;
+
 static StaticTask_t _mainTaskBuffer;
-StackType_t _mainTaskStack[MAIN_STACK_SIZE];
+StackType_t _mainTaskStack[MAIN_STACK_SIZE / sizeof(StackType_t)];
 
 int main(void)
 {
@@ -24,13 +27,17 @@ int main(void)
 	SystemClock_Config();
 
 	/* Initialize all configured peripherals */
+
 	MX_GPIO_Init();
 
 	/* Configure LED2 */
 	BSP_LED_Init(LED2);
-	
+
 	/* Enable GPIOA clock */
 	__HAL_RCC_GPIOA_CLK_ENABLE();
+
+	/* Init CRC peripheral */
+	MX_CRC_Init();
 
 	/* Ensure all priority bits are assigned as preemption priority bits. */
 	HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
@@ -40,8 +47,8 @@ int main(void)
 	I2C_Init(1);
 
 	xTaskCreateStatic((TaskFunction_t)Controller_Task,
-		(const char *)"MAIN", MAIN_STACK_SIZE, NULL, 3,
-		_mainTaskStack, &_mainTaskBuffer);
+					  (const char *)"MAIN", MAIN_STACK_SIZE / sizeof(StackType_t),
+					  NULL, 3, _mainTaskStack, &_mainTaskBuffer);
 
 	vTaskStartScheduler();
 
@@ -105,13 +112,26 @@ static void MX_GPIO_Init(void)
 }
 
 /**
+ * @brief CRC Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_CRC_Init(void)
+{
+	hcrc.Instance = CRC;
+	if (HAL_CRC_Init(&hcrc) != HAL_OK)
+	{
+		Error_Handler();
+	}
+}
+
+/**
  * @brief EXTI line detection callbacks
  * @param GPIO_Pin: Specifies the pins connected EXTI line
  * @retval None
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-
 }
 
 /**

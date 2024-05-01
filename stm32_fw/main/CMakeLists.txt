@@ -77,13 +77,15 @@ set (PROJECT_SOURCES
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_i2c_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc_ex.c
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c	
 	${FREERTOS_DIR}/Source/list.c
 	${FREERTOS_DIR}/Source/stream_buffer.c
 	${FREERTOS_DIR}/Source/tasks.c
 	${FREERTOS_DIR}/Source/timers.c
-	${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
+	#${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
 	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh.c
 	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh_reg.c
 	)

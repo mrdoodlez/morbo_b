@@ -50,7 +50,7 @@ static struct
 
 static TaskHandle_t _hListener = NULL;
 static StaticTask_t _hipTaskBuffer;
-static StackType_t _hipTaskStack[HIP_STACK_SIZE];
+StackType_t _hipTaskStack[HIP_STACK_SIZE / sizeof(StackType_t)];
 
 static void _HostIface_Listen();
 static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd);
@@ -59,8 +59,8 @@ static void _HostIface_HandlePing(const HIP_Ping_t* cmd);
 int HostIface_Start()
 {
 	if ((_hListener = xTaskCreateStatic((TaskFunction_t)_HostIface_Listen,
-			(const char *)"HIP_LSTNR", HIP_STACK_SIZE, NULL, 3,
-			_hipTaskStack, &_hipTaskBuffer)) == NULL)
+			(const char *)"HIP_LSTNR", HIP_STACK_SIZE / sizeof(StackType_t),
+			NULL, 3, _hipTaskStack, &_hipTaskBuffer)) == NULL)
 		return -1;	
 
 	return 0;

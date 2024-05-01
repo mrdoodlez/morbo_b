@@ -2,6 +2,7 @@
 #define _CONTROLLER_H_
 
 #include "main.h"
+#include "motion_di.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -9,6 +10,8 @@ extern "C"
 #endif
 
 void Controller_Task();
+
+void Controller_NewMeas(MDI_output_t *mdiData);
 
 #ifdef __cplusplus
 }

@@ -15,8 +15,14 @@ volatile int _dbg = 0;
 
 static CRC_HandleTypeDef hcrc;
 
-static StaticTask_t _mainTaskBuffer;
+StaticTask_t _mainTaskBuffer;
 StackType_t _mainTaskStack[MAIN_STACK_SIZE / sizeof(StackType_t)];
+
+StaticTask_t _idleTaskBuffer;
+StackType_t _idleTaskStack[configMINIMAL_STACK_SIZE];
+
+StackType_t _timerTaskStack[configTIMER_TASK_STACK_DEPTH];
+StaticTask_t _timerTaskBuffer;
 
 int main(void)
 {
@@ -172,3 +178,21 @@ void assert_failed(uint8_t *file, uint32_t line)
 	/* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
+void vApplicationGetIdleTaskMemory( StaticTask_t ** ppxIdleTaskTCBBuffer,
+									StackType_t ** ppxIdleTaskStackBuffer,
+									uint32_t * pulIdleTaskStackSize )
+{
+	*ppxIdleTaskTCBBuffer = &(_idleTaskBuffer);
+	*ppxIdleTaskStackBuffer = &(_idleTaskStack[0]);
+	*pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+
+void vApplicationGetTimerTaskMemory( StaticTask_t ** ppxTimerTaskTCBBuffer,
+										StackType_t ** ppxTimerTaskStackBuffer,
+										uint32_t * pulTimerTaskStackSize )
+{
+	*ppxTimerTaskTCBBuffer = &(_timerTaskBuffer);
+	*ppxTimerTaskStackBuffer = &(_timerTaskStack[0]);
+	*pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+}

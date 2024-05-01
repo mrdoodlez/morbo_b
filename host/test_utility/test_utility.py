@@ -17,7 +17,7 @@ CRC = 0xCACB
 
 def main():
     print("Hello boss!")
-    port = serialPort = serial.Serial(port="/dev/ttyUSB0", baudrate=9600, timeout = 0.1)
+    port = serialPort = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.1)
     seq = 0
     while True:
         cmd = CMD_PING

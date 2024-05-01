@@ -12,7 +12,7 @@
 
 #define HIP_MSG_PING		0x0001
 
-#define HIP_STACK_SIZE		128
+#define HIP_STACK_SIZE		1024
 
 extern int _dbg;
 

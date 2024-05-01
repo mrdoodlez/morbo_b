@@ -9,8 +9,6 @@ extern "C" {
 
 void IMU_Init(uint8_t i2cDev);
 
-int IMU_Read();
-
 #ifdef __cplusplus
 }
 #endif

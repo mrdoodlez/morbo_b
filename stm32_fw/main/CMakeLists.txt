@@ -85,6 +85,7 @@ set (PROJECT_SOURCES
 	${FREERTOS_DIR}/Source/stream_buffer.c
 	${FREERTOS_DIR}/Source/tasks.c
 	${FREERTOS_DIR}/Source/timers.c
+	${FREERTOS_DIR}/Source/queue.c
 	#${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
 	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh.c
 	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh_reg.c

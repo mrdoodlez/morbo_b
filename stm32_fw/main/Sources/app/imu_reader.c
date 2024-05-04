@@ -256,7 +256,7 @@ int32_t WriteReg(uint16_t devAddr, uint16_t reg, uint8_t *pData, uint16_t length
 
 int32_t GetTick()
 {
-	return HAL_GetTick();
+	return xTaskGetTickCount();
 }
 
 void Delay(uint32_t ms)

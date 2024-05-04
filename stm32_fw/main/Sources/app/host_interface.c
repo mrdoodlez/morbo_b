@@ -1,91 +1,117 @@
 #include "host_interface.h"
+#include "host_interface_cmds.h"
 #include "serial.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
+#include "semphr.h"
 
-#define HIP_SERIAL			0
+#define HIP_SERIAL				0
 
-#define HIP_MAX_PAYLOAD		256
+#define HIP_STACK_SIZE			1024
+#define HIP_TX_SIZE 			1024
 
-#define HIP_SYMBOL_M		'm'
-#define HIP_SYMBOL_B		'b'
-
-#define HIP_MSG_PING		0x0001
-
-#define HIP_STACK_SIZE		1024
+#define MSG_QUEUE_LENGTH		4
+#define MSG_ITEM_SIZE			sizeof(HIP_Cmd_t)
 
 extern int _dbg;
-
-typedef struct
-{
-	uint8_t m;
-	uint8_t b;
-	uint16_t cmd;
-	uint16_t len;	
-} __attribute__((packed)) HIP_Header_t;
-
 typedef struct
 {
 	HIP_Header_t header;
 	uint8_t payload[HIP_MAX_PAYLOAD];
 } __attribute__((packed)) HIP_Cmd_t;
 
-typedef struct
-{
-	HIP_Header_t header;
-	uint16_t seqNumber;
-	uint16_t crc;
-} __attribute__((packed)) HIP_Ping_t;
-
 /******************************************************************************/
-
-static struct
+struct
 {
+	QueueHandle_t hQueue;
+	uint32_t msgCount;
+
 	HIP_Cmd_t rxCmd;
-	HIP_Cmd_t txCmd;
 	uint16_t rxLen;
-} _decoderCtx;
+
+	uint8_t txBuffer[HIP_TX_SIZE];
+	uint8_t txLen;
+
+	SemaphoreHandle_t txSem;
+} g_decoderCtx;
 
 /******************************************************************************/
 
 static TaskHandle_t _hListener = NULL;
-static StaticTask_t _hipTaskBuffer;
-StackType_t _hipTaskStack[HIP_STACK_SIZE / sizeof(StackType_t)];
+static StaticTask_t _hipListenerBuffer;
+StackType_t _hipListenerStack[HIP_STACK_SIZE / sizeof(StackType_t)];
+
+static TaskHandle_t _hSender = NULL;
+static StaticTask_t _hipsenderBuffer;
+StackType_t _hipSenderStack[HIP_STACK_SIZE / sizeof(StackType_t)];
+
+static StaticSemaphore_t _txSemBuffer;
 
 static void _HostIface_Listen();
+static void _HostIface_Send();
+
 static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd);
 static void _HostIface_HandlePing(const HIP_Ping_t* cmd);
 
 int HostIface_Start()
 {
+	g_decoderCtx.txSem = xSemaphoreCreateBinaryStatic(&_txSemBuffer);
+
+	if ((_hSender = xTaskCreateStatic((TaskFunction_t)_HostIface_Send,
+			(const char *)"HIP_SNDER", HIP_STACK_SIZE / sizeof(StackType_t),
+			NULL, 3, _hipSenderStack, &_hipsenderBuffer)) == NULL)
+		return -20;
+
 	if ((_hListener = xTaskCreateStatic((TaskFunction_t)_HostIface_Listen,
 			(const char *)"HIP_LSTNR", HIP_STACK_SIZE / sizeof(StackType_t),
-			NULL, 3, _hipTaskStack, &_hipTaskBuffer)) == NULL)
-		return -1;	
+			NULL, 3, _hipListenerStack, &_hipListenerBuffer)) == NULL)
+		return -30;
 
 	return 0;
 }
 
-int HostIface_SendData(uint16_t id, const uint8_t *buff, uint16_t len)
+int HostIface_PutData(uint16_t id, const uint8_t *buff, uint16_t len)
 {
-	_decoderCtx.txCmd.header.m = 'm';
-	_decoderCtx.txCmd.header.b = 'b';
-	_decoderCtx.txCmd.header.cmd = id;
-	_decoderCtx.txCmd.header.len = len;
+	HIP_Cmd_t *txCmd = (HIP_Cmd_t*)(g_decoderCtx.txBuffer + g_decoderCtx.txLen);
+
+	txCmd->header.m = 'm';
+	txCmd->header.b = 'b';
+	txCmd->header.cmd = id;
+	txCmd->header.len = len;
 	for (int i = 0; i < len; i++)
-		_decoderCtx.txCmd.payload[i] = buff[i];
+		txCmd->payload[i] = buff[i];
 
-	*(uint16_t*)&(_decoderCtx.txCmd.payload[len]) = 0xCACB; //replace with real CRC
+	*(uint16_t*)&(txCmd->payload[len]) = 0xCACB; //replace with real CRC
 
-	Serial_Write(HIP_SERIAL, (uint8_t*)&_decoderCtx.txCmd,
-		sizeof(HIP_Header_t) + len + 2 /*CRC*/);
+	g_decoderCtx.txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
 
-	_dbg = 1005;
+	return 0;
+}
 
+int HostIface_Send()
+{
+	xSemaphoreGive(g_decoderCtx.txSem);
 	return 0;
 }
 
 /******************************************************************************/
+
+static void _HostIface_Send()
+{
+	while (1)
+	{
+		if (xSemaphoreTake(g_decoderCtx.txSem, 0xFFFFFFFF) == pdTRUE)
+		{
+			Serial_Write(HIP_SERIAL, g_decoderCtx.txBuffer, g_decoderCtx.txLen);
+			g_decoderCtx.txLen = 0;
+		}
+		else
+		{
+			// TODO: handle error
+		}
+	}
+}
 
 static void _HostIface_Listen()
 {
@@ -115,40 +141,40 @@ static void _HostIface_Listen()
 						protoState = ProtoState_cmd0;
 					break;
 				case ProtoState_cmd0:
-					_decoderCtx.rxCmd.header.cmd = c;
+					g_decoderCtx.rxCmd.header.cmd = c;
 					protoState = ProtoState_cmd1;
 					break;
 				case ProtoState_cmd1:
-					_decoderCtx.rxCmd.header.cmd |= (uint16_t)c << 8;
+					g_decoderCtx.rxCmd.header.cmd |= (uint16_t)c << 8;
 					protoState = ProtoState_len0;
 					break;
 				case ProtoState_len0:
-					_decoderCtx.rxCmd.header.len = c;
+					g_decoderCtx.rxCmd.header.len = c;
 					protoState = ProtoState_len1;
 					break;
 				case ProtoState_len1:
-					_decoderCtx.rxCmd.header.len |= (uint16_t)c << 8;
+					g_decoderCtx.rxCmd.header.len |= (uint16_t)c << 8;
 					protoState = ProtoState_payload;
 					break;
 				case ProtoState_payload:
-					if ((_decoderCtx.rxLen < _decoderCtx.rxCmd.header.len) &&
-						(_decoderCtx.rxLen < HIP_MAX_PAYLOAD - 2))
+					if ((g_decoderCtx.rxLen < g_decoderCtx.rxCmd.header.len) &&
+						(g_decoderCtx.rxLen < HIP_MAX_PAYLOAD - 2))
 					{
-						_decoderCtx.rxCmd.payload[_decoderCtx.rxLen++] = c;
-						if (_decoderCtx.rxLen == _decoderCtx.rxCmd.header.len)
+						g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
+						if (g_decoderCtx.rxLen == g_decoderCtx.rxCmd.header.len)
 							protoState = ProtoState_crc0;
 					}
 					else
 						protoState = ProtoState_m;
 					break;
 				case ProtoState_crc0:
-					_decoderCtx.rxCmd.payload[_decoderCtx.rxLen++] = c;
+					g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
 					protoState = ProtoState_crc1;
 					break;
 				case ProtoState_crc1:
-					_decoderCtx.rxCmd.payload[_decoderCtx.rxLen++] = c;
+					g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
 
-					_HostIface_HandleCommand(&_decoderCtx.rxCmd);
+					_HostIface_HandleCommand(&g_decoderCtx.rxCmd);
 
 					protoState = ProtoState_m;
 					break;
@@ -156,9 +182,9 @@ static void _HostIface_Listen()
 				default:
 					if (c == HIP_SYMBOL_M)
 					{
-						_decoderCtx.rxCmd.header.len = 0;
-						_decoderCtx.rxCmd.header.cmd = 0;
-						_decoderCtx.rxLen = 0;
+						g_decoderCtx.rxCmd.header.len = 0;
+						g_decoderCtx.rxCmd.header.cmd = 0;
+						g_decoderCtx.rxLen = 0;
 
 						protoState = ProtoState_b;
 					}
@@ -190,7 +216,8 @@ static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd)
 
 static void _HostIface_HandlePing(const HIP_Ping_t* cmd)
 {
-	uint16_t rxSeq = cmd->seqNumber;
-	HostIface_SendData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
+	uint16_t rxSeq = cmd->payload.seqNumber;
+	HostIface_PutData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
+	HostIface_Send();
 	_dbg = 1004;
 }

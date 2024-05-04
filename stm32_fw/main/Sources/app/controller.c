@@ -3,8 +3,11 @@
 #include "task.h"
 #include "queue.h"
 #include "host_interface.h"
+#include "host_interface_cmds.h"
 #include "pca9685.h"
 #include "imu_reader.h"
+
+#include <string.h>
 
 #define PCA9685_BUS						1
 #define PCA9685_ADDR					0x80
@@ -29,14 +32,15 @@ typedef struct
 } ControllerMessage_t;
 
 static StaticQueue_t _msgQueue;
-uint8_t _msgStorage[MSG_QUEUE_LENGTH * MSG_ITEM_SIZE];
+static uint8_t _msgStorage[MSG_QUEUE_LENGTH * MSG_ITEM_SIZE];
 
-static struct
+struct
 {
 	QueueHandle_t hQueue;
 	uint32_t msgCount;
 
 	MDI_output_t lastMeas;
+
 	uint32_t lastSend;
 } g_controllerState;
 
@@ -44,6 +48,8 @@ static struct
 
 static void _Controller_ProcessNewMeas(MDI_output_t *mdiData);
 static void _Controller_SendMessages();
+
+void _Controller_SendOrientation();
 
 /******************************************************************************/
 
@@ -132,6 +138,25 @@ void _Controller_ProcessNewMeas(MDI_output_t *mdiData)
 
 void _Controller_SendMessages()
 {
-	//uint32_t now;
+	uint32_t now = xTaskGetTickCount();
 
+	if ((now - g_controllerState.lastSend) > 100)
+	{
+		_Controller_SendOrientation();
+		g_controllerState.lastSend = now;
+
+		HostIface_Send();
+	}
+}
+
+void _Controller_SendOrientation()
+{
+	HIP_Payload_Orientation_t or;
+
+	memcpy(or.rotation, g_controllerState.lastMeas.rotation, sizeof(or.rotation));
+	memcpy(or.quaternion, g_controllerState.lastMeas.quaternion, sizeof(or.quaternion));
+	memcpy(or.gravity, g_controllerState.lastMeas.gravity, sizeof(or.gravity));
+	memcpy(or.linear_acceleration, g_controllerState.lastMeas.linear_acceleration,  sizeof(or.linear_acceleration));
+
+	HostIface_PutData(HIP_MSG_STATE_OR, (uint8_t*)&or, sizeof(or));
 }

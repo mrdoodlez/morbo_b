@@ -192,7 +192,6 @@ size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
  */
 static void MX_I2C1_Init(void)
 {
-
 	_i2cContext.hi2c1.Instance = I2C1;
 	_i2cContext.hi2c1.Init.Timing = 0x10802D9B; //0x30A0A7FB;
 	_i2cContext.hi2c1.Init.OwnAddress1 = I2C_ADDRESS;

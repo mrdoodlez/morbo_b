@@ -6,6 +6,7 @@
 #include "host_interface_cmds.h"
 #include "pca9685.h"
 #include "imu_reader.h"
+#include "engine_control.h"
 
 #include <string.h>
 
@@ -13,6 +14,8 @@
 #define PCA9685_ADDR					0x80
 
 #define IMU_BUS							1
+
+#define EC_BUS							1
 
 #define CONTROLLER_MESSAGE_CMD_XX		0x0000
 #define CONTROLLER_MESSAGE_DI_MEAS		0x0100
@@ -67,9 +70,24 @@ void Controller_Task()
 		// TODO: handle error
 	}
 
-	PCA9685_Init(PCA9685_BUS, PCA9685_ADDR, 0);
+	rc = EC_Init(EC_BUS);
+	if (rc)
+	{
+		// TODO: handle error
+	}
 
+	while (1)
+	{
+		EC_SetThrottle(EC_Engine_1, 0.4);
+
+		vTaskDelay(10);
+	}
+
+
+	/*
+	PCA9685_Init(PCA9685_BUS, PCA9685_ADDR, 0);
 	PCA9685_SetPWMFreq(1600);
+	*/
 
 	IMU_Init(IMU_BUS);
 

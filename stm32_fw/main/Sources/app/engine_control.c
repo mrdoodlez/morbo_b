@@ -63,9 +63,9 @@ void _DSHOT_SendWord(uint16_t value)
 	{
 		bits[i] = ((coded & mask) == 0) ? DSHOT_ZERO : DSHOT_ONE;
 		mask >>= 1;
-	}	
+	}
 
 	SPI_Write(_spiDev, padding, 4);
-	SPI_Write(_spiDev, bits, 20);	
+	SPI_Write(_spiDev, bits, 20);
 
 }

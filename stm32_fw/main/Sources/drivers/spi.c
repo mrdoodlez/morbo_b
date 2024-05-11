@@ -106,7 +106,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 
-		/**SPI1 GPIO Configuration		
+		/**SPI1 GPIO Configuration
 		PB3     ------> SPI1_SCK
 		PB5     ------> SPI1_MOSI
 		*/

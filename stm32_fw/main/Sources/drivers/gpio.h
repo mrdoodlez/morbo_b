@@ -3,6 +3,10 @@
 
 #include "main.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum
 {
 	GPIO_Channel_0,
@@ -12,5 +16,9 @@ int GPIO_Init();
 
 int GPIO_Set(GPIO_Channel_t ch, int set);
 int GPIO_Toggle(GPIO_Channel_t ch);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //_GPIO_H_

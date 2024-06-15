@@ -36,3 +36,8 @@ void EC_SetThrottle(EC_Engine_t engine, float throttle)
 
 	PCA9685_WriteMicroseconds(engine, (1.0 + throttle) * 1.0e3);
 }
+
+void EC_Enable(uint8_t en)
+{
+	GPIO_Set(GPIO_Channel_0, en ? 0 : 1);
+}

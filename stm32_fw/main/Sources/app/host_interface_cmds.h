@@ -8,7 +8,7 @@ extern "C"
 {
 #endif
 
-#define HIP_MAX_PAYLOAD		256
+#define HIP_MAX_PAYLOAD		32
 
 #define HIP_SYMBOL_M		'm'
 #define HIP_SYMBOL_B		'b'
@@ -17,6 +17,8 @@ extern "C"
 
 #define HIP_MSG_ACK			0x0100
 #define HIP_MSG_NAK			0x0101
+
+#define HIP_MSG_THROTTLE	0x0200
 
 
 /*
@@ -35,7 +37,7 @@ typedef struct
 	uint8_t m;
 	uint8_t b;
 	uint16_t cmd;
-	uint16_t len;	
+	uint16_t len;
 } __attribute__((packed)) HIP_Header_t;
 
 typedef struct
@@ -46,9 +48,21 @@ typedef struct
 typedef struct
 {
 	HIP_Header_t header;
-	HIP_Payload_Ping_t payload;	
+	HIP_Payload_Ping_t payload;
 	uint16_t crc;
 } __attribute__((packed)) HIP_Ping_t;
+
+typedef struct
+{
+	uint16_t cmd;
+} __attribute__((packed)) HIP_Payload_AckNak_t;
+
+typedef struct
+{
+	HIP_Header_t header;
+	HIP_Payload_AckNak_t payload;
+	uint16_t crc;
+} __attribute__((packed)) HIP_AckNak_t;
 
 typedef struct
 {
@@ -61,9 +75,37 @@ typedef struct
 typedef struct
 {
 	HIP_Header_t header;
-	HIP_Payload_Orientation_t payload;	
+	HIP_Payload_Orientation_t payload;
 	uint16_t crc;
 } __attribute__((packed)) HIP_Orientation_t;
+
+typedef struct
+{
+	uint8_t flags;
+	float throttle[4];
+} __attribute__((packed)) HIP_Payload_Throttle_t;
+
+typedef enum
+{
+	HIP_Throttle_Flags_Enable = 1 << 0,
+	HIP_Throttle_Flags_Eng1   = 1 << 1,
+	HIP_Throttle_Flags_Eng2   = 1 << 2,
+	HIP_Throttle_Flags_Eng3   = 1 << 3,
+	HIP_Throttle_Flags_Eng4   = 1 << 4,
+} HIP_Throttle_Flags_t;
+
+typedef struct
+{
+	HIP_Header_t header;
+	HIP_Payload_Throttle_t payload;
+	uint16_t crc;
+} __attribute__((packed)) HIP_Throttle_t;
+
+typedef struct
+{
+	HIP_Header_t header;
+	uint8_t payload[HIP_MAX_PAYLOAD];
+} __attribute__((packed)) HIP_Cmd_t;
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,6 @@
 #include "host_interface.h"
 #include "host_interface_cmds.h"
+#include "controller.h"
 #include "serial.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -15,11 +16,6 @@
 #define MSG_ITEM_SIZE			sizeof(HIP_Cmd_t)
 
 extern int _dbg;
-typedef struct
-{
-	HIP_Header_t header;
-	uint8_t payload[HIP_MAX_PAYLOAD];
-} __attribute__((packed)) HIP_Cmd_t;
 
 /******************************************************************************/
 struct
@@ -52,7 +48,6 @@ static void _HostIface_Listen();
 static void _HostIface_Send();
 
 static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd);
-static void _HostIface_HandlePing(const HIP_Ping_t* cmd);
 
 int HostIface_Start()
 {
@@ -200,24 +195,9 @@ static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd)
 
 	if (crc == 0xCACB) // TODO: replace with real check
 	{
-		switch (cmd->header.cmd)
-		{
-			case HIP_MSG_PING:
-				_HostIface_HandlePing((HIP_Ping_t*)cmd);
-				break;
-			default:
-				_dbg = 1003;
-				break;
-		}
+		Controller_NewCommand(cmd);
 	}
 	else
 		_dbg = 1002;
 }
 
-static void _HostIface_HandlePing(const HIP_Ping_t* cmd)
-{
-	uint16_t rxSeq = cmd->payload.seqNumber;
-	HostIface_PutData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
-	HostIface_Send();
-	_dbg = 1004;
-}

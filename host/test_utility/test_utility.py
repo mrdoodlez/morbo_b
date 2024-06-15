@@ -1,179 +1,160 @@
 #!/usr/bin/env python3
 
-import os
-import select
-import sys
-import termios
-import tty
-import socket
 import serial
 import struct
 import time
-import numpy
-from math import *
-from quat import *
-
-import pygame
-from pygame.locals import *
-
-from OpenGL.GL import *
-from OpenGL.GLU import *
-
+import threading
 
 CMD_PING = 0x0001
 LEN_PING = 2
 
+CMD_THROTTLE = 0x0200
+LEN_THROTTLE = 4 * 4 + 1
+
+MSG_ACK = 0x0100
+MSG_NAK = 0x0101
+
 CRC = 0xCACB
 
-def q_to_mat4(q):
-    w, x, y, z = q
-    return numpy.array(
-        [[1 - 2 * y * y - 2 * z * z, 2 * x * y - 2 * z * w, 2 * x * z + 2 * y * w, 0],
-         [2 * x * y + 2 * z * w, 1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w, 0],
-         [2 * x * z - 2 * y * w, 2 * y * z + 2 * x * w, 1 - 2 * x * x - 2 * y * y, 0],
-         [0, 0, 0, 1]], 'f')
+HIP_SYMBOL_B = b'b'
+HIP_SYMBOL_M = b'm'
 
-axis_verts = (
-    (-7.5, 0.0, 0.0),
-    ( 7.5, 0.0, 0.0),
-    ( 0.0,-7.5, 0.0),
-    ( 0.0, 7.5, 0.0),
-    ( 0.0, 0.0,-7.5),
-    ( 0.0, 0.0, 7.5)
-    )
+def throttle_enable(en, port):
+    throttles = [0.0, 0.0, 0.0, 0.0]
+    flags = en
 
-axes = (
-    (0,1),
-    (2,3),
-    (4,5)
-    )
+    cmd = CMD_THROTTLE
+    len = LEN_THROTTLE
 
-axis_colors = (
-    (1.0,0.0,0.0), # Red
-    (0.0,1.0,0.0), # Green
-    (0.0,0.0,1.0)  # Blue
-    )
+    throttle = struct.pack('<2sHHB4fH', b'mb', cmd, len, flags, throttles[0], \
+            throttles[1], throttles[2],  throttles[3],  CRC)
+    port.write(throttle)
+
+def handle_ping(payload):
+    pass
+
+def handle_acknak(ack, payload):
+    print("ack: ", payload)
+
+def pinger_function(name, port):
+    seq = 0
+    while True:
+        cmd = CMD_PING
+        len = LEN_PING
+
+        ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC)
+        port.write(ping)
+
+        seq = seq + 1
+
+        time.sleep(1)
+
+def console_function(name, port):
+    while True:
+        command = input("> ").split()
+        if command[0] == 't':
+            if command[1] == 'e':
+                throttle_enable(True, port)
+            if command[1] == 'd':
+                throttle_enable(False, port)
+
+def listener_function(name, port):
 
 
-'''
-       5____________6
-       /           /|
-      /           / |
-    1/__________2/  |
-    |           |   |
-    |           |   |
-    |           |   7
-    |           |  /
-    |           | /
-    0___________3/
-'''
+    ProtoState_m = 0
+    ProtoState_b = 1
+    ProtoState_len0 = 2
+    ProtoState_len1 = 3
+    ProtoState_cmd0 = 4
+    ProtoState_cmd1 = 5
+    ProtoState_payload = 6
+    ProtoState_crc0 = 7
+    ProtoState_crc1 = 8
 
-cube_verts = (
-    (-3.0,-3.0, 3.0),
-    (-3.0, 3.0, 3.0),
-    ( 3.0, 3.0, 3.0),
-    ( 3.0,-3.0, 3.0),
-    (-3.0,-3.0,-3.0),
-    (-3.0, 3.0,-3.0),
-    ( 3.0, 3.0,-3.0),
-    ( 3.0,-3.0,-3.0)
-    )
+    state = ProtoState_m
+    cmd = -1
+    pllen = 0
+    payload = list()
+    rxCrc = -1
 
-cube_edges = (
-    (0,1),
-    (0,3),
-    (0,4),
-    (2,1),
-    (2,3),
-    (2,6),
-    (5,1),
-    (5,4),
-    (5,6),
-    (7,3),
-    (7,4),
-    (7,6)
-    )
+    while True:
+        c = port.read(1)
+        if c == b'':
+            continue
 
-cube_surfaces = (
-    (0,1,2,3), # Front
-    (3,2,6,7), # Right
-    (7,6,5,4), # Left
-    (4,5,1,0), # Back
-    (1,5,6,2), # Top
-    (4,0,3,7)  # Bottom
-    )
+        if state == ProtoState_b:
+            if c == HIP_SYMBOL_B:
+                state = ProtoState_cmd0
+            else:
+                state = ProtoState_m
 
-cube_colors = (
-    (0.769,0.118,0.227), # Red
-    (  0.0,0.318,0.729), # Blue
-    (  1.0,0.345,  0.0), # Orange
-    (  0.0, 0.62,0.376), # Green
-    (  1.0,  1.0,  1.0), # White
-    (  1.0,0.835,  0.0)  # Yellow
-    )
+        elif state == ProtoState_cmd0:
+            cmd = int.from_bytes(c, "little")
+            state = ProtoState_cmd1
 
-def Axis():
-    glBegin(GL_LINES)
-    for color,axis in zip(axis_colors,axes):
-        glColor3fv(color)
-        for point in axis:
-            glVertex3fv(axis_verts[point])
-    glEnd()
+        elif state == ProtoState_cmd1:
+            cmd = cmd + int.from_bytes(c, "little") * 256
+            state = ProtoState_len0
 
-def Cube():
-    glBegin(GL_QUADS)
-    for color,surface in zip(cube_colors,cube_surfaces):
-        glColor3fv(color)
-        for vertex in surface:
-            glVertex3fv(cube_verts[vertex])
-    glEnd()
+        elif state == ProtoState_len0:
+            pllen = int.from_bytes(c, "little")
+            state = ProtoState_len1
 
-    glBegin(GL_LINES)
-    glColor3fv((0.0,0.0,0.0))
-    for edge in cube_edges:
-        for vertex in edge:
-            glVertex3fv(cube_verts[vertex])
-    glEnd()
+        elif state == ProtoState_len1:
+            pllen = pllen + int.from_bytes(c, "little") * 256
+            state = ProtoState_payload
+
+        elif state == ProtoState_payload:
+            payload.append(c)
+            if len(payload) == pllen:
+                state = ProtoState_crc0
+
+        elif state == ProtoState_crc0:
+            rxCrc = int.from_bytes(c, "little")
+            state = ProtoState_crc1;
+
+        elif state == ProtoState_crc1:
+            rxCrc = rxCrc + int.from_bytes(c, "little") * 256
+
+            if rxCrc == CRC:
+                if cmd == CMD_PING:
+                    handle_ping(payload)
+                elif cmd == MSG_ACK:
+                    handle_acknak(1, payload)
+                elif cmd == MSG_NAK:
+                    handle_acknak(0, payload)
+
+            state = ProtoState_m
+
+        elif state == ProtoState_m:
+            if c == HIP_SYMBOL_M:
+                cmd = -1
+                pllen = 0
+                payload = list()
+                rxCrc = -1
+                state = ProtoState_b
+
 
 def main():
     print("Hello boss!")
 
-    pygame.init()
-    display = (1800,1718)
-    pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
-
-    # Using depth test to make sure closer colors are shown over further ones
-    glEnable(GL_DEPTH_TEST)
-    glDepthFunc(GL_LESS)
-
-    # Default view
-    glMatrixMode(GL_PROJECTION)
-    gluPerspective(45, (display[0]/display[1]), 0.5, 40)
-    glTranslatef(0.0,0.0,-17.5)    
-
     port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.12)
 
-    while True:
-        rxb = port.read(60)
-        # print(rxb)
+    pinger = threading.Thread(target=pinger_function, args=("pinger", port,))
+    pinger.start()
 
-        orientation = struct.unpack("<2sHHfffffffffffff", rxb[0:58])
+    listener = threading.Thread(target=listener_function, args=("listener", port,))
+    listener.start()
 
-        rotation = orientation[3:6]
-        quaternion = orientation[6:10]
-        gravity = orientation[10:13]
-        acceleration = orientation[13:16]
+    console = threading.Thread(target=console_function, args=("console", port,))
+    console.start()
 
-        print(rotation, quaternion, gravity, acceleration)
 
-        glMatrixMode(GL_MODELVIEW)
-        glLoadMatrixf(q_to_mat4([quaternion[0], quaternion[2], quaternion[1], quaternion[3]]))
+'''
+def main():
+    print("Hello boss!")
 
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        Cube()
-        Axis()
-        pygame.display.flip()
-
+    port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200)
 
     seq = 0
     while True:
@@ -183,7 +164,7 @@ def main():
         if 0: #seq % 5  == 1:
             ping = struct.pack('<2sHHH', b'mb', cmd, len, seq)
         else:
-            ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC) 
+            ping = struct.pack('<2sHHHH', b'mb', cmd, len, seq, CRC)
 
         port.write(ping)
 
@@ -195,8 +176,8 @@ def main():
         time.sleep(5)
 
         seq += 1
+'''
 
-        
 
 if __name__ == '__main__':
     main()

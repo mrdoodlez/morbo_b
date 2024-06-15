@@ -4,17 +4,12 @@
 #include "queue.h"
 #include "host_interface.h"
 #include "host_interface_cmds.h"
-#include "pca9685.h"
 #include "imu_reader.h"
 #include "engine_control.h"
 
 #include <string.h>
 
-#define PCA9685_BUS						1
-#define PCA9685_ADDR					0x80
-
 #define IMU_BUS							1
-
 #define EC_BUS							1
 
 #define CONTROLLER_MESSAGE_CMD_XX		0x0000
@@ -76,20 +71,24 @@ void Controller_Task()
 		// TODO: handle error
 	}
 
-	while (1)
-	{
-		EC_SetThrottle(EC_Engine_1, 0.4);
-
-		vTaskDelay(10);
-	}
-
-
-	/*
-	PCA9685_Init(PCA9685_BUS, PCA9685_ADDR, 0);
-	PCA9685_SetPWMFreq(1600);
-	*/
 
 	IMU_Init(IMU_BUS);
+
+	/*
+	int n = 0;
+	while (1)
+	{
+		float thr = fabs((1.0 + sin(n * 0.01)) / 2.0);
+		for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+		{
+			EC_SetThrottle(en, 0.4 + thr * 0.4);
+		}
+
+		n = (n + 1) % 628;
+
+		vTaskDelay(100);
+	}
+	*/
 
 	ControllerMessage_t msg;
 
@@ -114,20 +113,6 @@ void Controller_Task()
 	}
 
 	/*
-
-	while (1)
-	{
-		for (uint16_t i = 0; i < 4096; i +=  8)
-		{
-			for (uint8_t pwmnum=0; pwmnum < 16; pwmnum++)
-			{
-				PCA9685_SetPWM(pwmnum, 0, (i + (4096/16)*pwmnum) % 4096 );
-			}
-		}
-
-		vTaskDelay(100);
-	}
-
 	while (1)
 	{
 		// do nothing (yet)

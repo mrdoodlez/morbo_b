@@ -194,7 +194,7 @@ int32_t ASM330LHH_0_Probe()
 	ASM330LHH_Capabilities_t cap;
 
 	io_ctx.BusType = ASM330LHH_I2C_BUS;
-	io_ctx.Address = ASM330LHH_I2C_ADD_L;
+	io_ctx.Address = ASM330LHH_I2C_ADD_H;
 	io_ctx.Init = DummyFunc;
 	io_ctx.DeInit = DummyFunc;
 	io_ctx.ReadReg = ReadReg;

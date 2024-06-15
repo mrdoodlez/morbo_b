@@ -155,7 +155,8 @@ def main():
 
     while True:
         rxb = port.read(60)
-        #print(rxb)
+        # print(rxb)
+
         orientation = struct.unpack("<2sHHfffffffffffff", rxb[0:58])
 
         rotation = orientation[3:6]
@@ -172,6 +173,7 @@ def main():
         Cube()
         Axis()
         pygame.display.flip()
+
 
     seq = 0
     while True:

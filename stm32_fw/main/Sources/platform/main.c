@@ -1,7 +1,7 @@
 #include "main.h"
 #include "serial.h"
 #include "i2c.h"
-#include "spi.h"
+#include "gpio.h"
 #include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -53,7 +53,7 @@ int main(void)
 
 	I2C_Init(1);
 
-	SPI_Init(1);
+	GPIO_Init();
 
 	xTaskCreateStatic((TaskFunction_t)Controller_Task,
 					  (const char *)"MAIN", MAIN_STACK_SIZE / sizeof(StackType_t),

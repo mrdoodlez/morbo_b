@@ -15,7 +15,7 @@ typedef enum
 	EC_Engine_4,
 } EC_Engine_t;
 
-int EC_Init(int spiDev);
+int EC_Init(int i2cDev);
 
 void EC_SetThrottle(EC_Engine_t engine, float throttle);
 

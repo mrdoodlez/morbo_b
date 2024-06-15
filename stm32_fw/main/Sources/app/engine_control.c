@@ -1,71 +1,38 @@
 #include "engine_control.h"
-#include "spi.h"
-#include <string.h>
+#include "pca9685.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "gpio.h"
 
-#define MOSI_PORT				GPIOB
-#define MOSI_PIN				GPIO_PIN_5
+#define PCA9685_ADDR					0x80
 
-#define DSHOT_ZERO				0xc0
-#define DSHOT_ONE				0xfc
-
-#define DSHOT_MIN_THROTTLE		48
-#define DSHOT_MAX_THROTTLE		0x7ff
-
-static int _spiDev;
-
-static void _EC_SelectChannel(uint8_t engine);
-
-static void _DSHOT_SendWord(uint16_t w);
+static int _i2cDev;
 
 /******************************************************************************/
 
-int EC_Init(int spiDev)
+int EC_Init(int i2cDev)
 {
-	_spiDev = spiDev;
+	_i2cDev = i2cDev;
+
+	GPIO_Set(GPIO_Channel_0, 1);
+
+	PCA9685_Init(_i2cDev, PCA9685_ADDR, 0);
+	PCA9685_SetPWMFreq(450);
+
+	for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+	{
+		EC_SetThrottle(en, 0.0);
+	}
+
+	vTaskDelay(100);
 
 	return 0;
 }
 
 void EC_SetThrottle(EC_Engine_t engine, float throttle)
 {
-	uint16_t dshotWord = (DSHOT_MAX_THROTTLE - DSHOT_MIN_THROTTLE) * throttle
-							+ DSHOT_MIN_THROTTLE;
+	if (throttle > 1.0)
+		throttle = 1.0;
 
-	_EC_SelectChannel(engine);
-
-	_DSHOT_SendWord(dshotWord);
-}
-
-/******************************************************************************/
-
-void _EC_SelectChannel(uint8_t engine)
-{
-
-}
-
-void _DSHOT_SendWord(uint16_t value)
-{
-	if (value > DSHOT_MAX_THROTTLE)
-		value = DSHOT_MAX_THROTTLE;
-
-	value <<= 1;
-
-	uint16_t crc = (value ^ (value >> 4) ^ (value >> 8)) & 0x0F;
-	uint16_t coded = (value << 4) | crc ;
-
-	static const SPI_Word_t padding[] = {0, 0, 0, 0};
-
-	SPI_Word_t bits[20];
-	memset(bits, 0, sizeof(bits));
-
-	uint16_t mask = 0x8000;
-	for (uint32_t i = 0; i < 16; i++)
-	{
-		bits[i] = ((coded & mask) == 0) ? DSHOT_ZERO : DSHOT_ONE;
-		mask >>= 1;
-	}
-
-	SPI_Write(_spiDev, padding, 4);
-	SPI_Write(_spiDev, bits, 20);
-
+	PCA9685_WriteMicroseconds(engine, (1.0 + throttle) * 1.0e3);
 }

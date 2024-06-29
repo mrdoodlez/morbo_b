@@ -134,6 +134,8 @@ static void _HostIface_Listen()
 				case ProtoState_b:
 					if (c == HIP_SYMBOL_B)
 						protoState = ProtoState_cmd0;
+					else
+						protoState = ProtoState_m;
 					break;
 				case ProtoState_cmd0:
 					g_decoderCtx.rxCmd.header.cmd = c;

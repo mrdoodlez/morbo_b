@@ -16,6 +16,8 @@ void Controller_NewMeas(const MDI_output_t *mdiData);
 
 void Controller_NewCommand(const HIP_Cmd_t* cmd);
 
+void Controller_HandleFatal();
+
 #ifdef __cplusplus
 }
 #endif

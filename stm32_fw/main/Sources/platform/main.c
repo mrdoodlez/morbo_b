@@ -149,6 +149,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
  */
 void Error_Handler(void)
 {
+	Controller_HandleFatal();
+
 	/* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	while (1)

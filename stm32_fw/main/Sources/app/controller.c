@@ -235,7 +235,12 @@ void _Controller_SendMessages()
 
 	if ((now - g_controllerState.lastSend) > 0xffffffff)
 	{
-		_Controller_SendOrientation();
+		static uint16_t rxSeq = 0;
+		HostIface_PutData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
+		rxSeq++;
+		HostIface_Send();
+
+		//_Controller_SendOrientation();
 		g_controllerState.lastSend = now;
 
 		HostIface_Send();

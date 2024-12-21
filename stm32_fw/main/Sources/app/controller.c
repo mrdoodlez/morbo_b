@@ -7,6 +7,8 @@
 #include "imu_reader.h"
 #include "engine_control.h"
 
+#include <math.h>
+
 #include <string.h>
 
 #define IMU_BUS							1
@@ -14,6 +16,10 @@
 
 #define MSG_QUEUE_LENGTH				4
 #define MSG_ITEM_SIZE					sizeof(ControllerMessage_t)
+
+#define OM_MSG_POOL_SZ					(sizeof(g_msgPool) / sizeof(g_msgPool[0]))
+
+#define SNDR_STACK_SIZE					1024
 
 extern int _dbg;
 
@@ -37,6 +43,7 @@ typedef struct
 static StaticQueue_t _msgQueue;
 static uint8_t _msgStorage[MSG_QUEUE_LENGTH * MSG_ITEM_SIZE];
 
+/******************************************************************************/
 struct
 {
 	QueueHandle_t hQueue;
@@ -44,8 +51,9 @@ struct
 
 	MDI_output_t lastMeas;
 
-	uint32_t lastSend;
 	uint32_t lastPing;
+
+	MachineState_t mState;
 } g_controllerState;
 
 /******************************************************************************/
@@ -55,6 +63,7 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd);
 
 static void _Controller_HandlePing(const HIP_Ping_t* cmd);
 static void _Controller_HandleThrottle(const HIP_Throttle_t* cmd);
+static void _Controller_HandleEM(const HIP_EM_t* cmd);
 
 static void _Controller_Process();
 
@@ -63,6 +72,22 @@ static void _Controller_SendMessages();
 void _Controller_SendOrientation();
 
 /******************************************************************************/
+
+struct
+{
+	uint16_t msgId;
+	uint16_t msgPeriod;
+	uint32_t lastEmit;
+	void (*emit)(void);
+} g_msgPool[] =
+{
+	{ .msgId = HIP_MSG_IMU, .emit = _Controller_SendOrientation},
+	{ .msgId = HIP_MSG_PVT, .emit = 0},
+};
+
+/******************************************************************************/
+
+/* TODO: support HW watchdog */
 
 #define WD_STACK_SIZE		128
 
@@ -74,11 +99,28 @@ static void _Watchdog_Task();
 
 /******************************************************************************/
 
+static TaskHandle_t _hSender = NULL;
+static StaticTask_t _msgSenderBuffer;
+StackType_t _msgSenderStack[SNDR_STACK_SIZE / sizeof(StackType_t)];
+
+static void _Sender_Task();
+
+/******************************************************************************/
+
 void Controller_Task()
 {
+	g_controllerState.mState = MachineState_Disarmed;
+
 	if ((_hWatchdog = xTaskCreateStatic((TaskFunction_t)_Watchdog_Task,
 			(const char *)"WATCHDOG", WD_STACK_SIZE / sizeof(StackType_t),
 			NULL, 3, _watchdogStack, &_watchdogBuffer)) == NULL)
+	{
+		// TODO: handle error
+	}
+
+	if ((_hSender = xTaskCreateStatic((TaskFunction_t)_Sender_Task,
+			(const char *)"SNDR", SNDR_STACK_SIZE / sizeof(StackType_t),
+			NULL, 3, _msgSenderStack, &_msgSenderBuffer)) == NULL)
 	{
 		// TODO: handle error
 	}
@@ -101,7 +143,6 @@ void Controller_Task()
 		// TODO: handle error
 	}
 
-
 	IMU_Init(IMU_BUS);
 
 	ControllerMessage_t msg;
@@ -123,20 +164,67 @@ void Controller_Task()
 			}
 
 			_Controller_Process();
-			_Controller_SendMessages();
-
 		}
 	}
+}
 
-	/*
-	while (1)
+/******************************************************************************/
+
+static void _Controller_Process()
+{
+	static MachineState_t prevState = MachineState_Disarmed;
+
+	if ((prevState != g_controllerState.mState)
+		&& (g_controllerState.mState == MachineState_Armed))
 	{
-		// do nothing (yet)
+		EC_Enable(0);
+
+		for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+		{
+			EC_SetThrottle(en, 0);
+		}
+
+		EC_Enable(1);
+
 		vTaskDelay(1000);
+
+		for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+		{
+			EC_SetThrottle(en, 0.1);
+		}
+	}
+	else if (g_controllerState.mState == MachineState_Armed)
+	{
+		float pitch = g_controllerState.lastMeas.rotation[1];
+		float roll = g_controllerState.lastMeas.rotation[2];
+
+		pitch = pitch / 180 * 3.145159;
+		roll = roll / 180 * 3.145159;
+
+		EC_SetThrottle(EC_Engine_1, 0.1 + fabs(pitch) * 30);
+		EC_SetThrottle(EC_Engine_2, 0.1 + fabs(pitch) * 30);
+
+		EC_SetThrottle(EC_Engine_3, 0.1 + fabs(roll) * 30);
+		EC_SetThrottle(EC_Engine_4, 0.1 + fabs(roll) * 30);
+
+		roll = roll;
 	}
 
-	*/
+	prevState = g_controllerState.mState;
 }
+
+/******************************************************************************/
+
+void _Sender_Task()
+{
+	while (1)
+	{
+		_Controller_SendMessages();
+		vTaskDelay(100);
+	}
+}
+
+/******************************************************************************/
 
 void Controller_NewMeas(const MDI_output_t *mdiData)
 {
@@ -158,14 +246,16 @@ void Controller_NewCommand(const HIP_Cmd_t* cmd)
 
 void Controller_HandleFatal()
 {
+	g_controllerState.mState = MachineState_HardFault;
 	EC_Enable(0);
 }
 
-/******************************************************************************/
-
-static void _Controller_Process()
+MachineState_t GetMachineState()
 {
+	return g_controllerState.mState;
 }
+
+/******************************************************************************/
 
 void _Controller_ProcessNewMeas(const MDI_output_t *mdiData)
 {
@@ -183,6 +273,9 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
 		case HIP_MSG_THROTTLE:
 			_Controller_HandleThrottle((HIP_Throttle_t*)cmd);
 			break;
+		case HIP_MSG_EM:
+			_Controller_HandleEM((HIP_EM_t*)cmd);
+			break;
 		default:
 			_dbg = 1003;
 			break;
@@ -191,9 +284,10 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
 
 static void _Controller_HandlePing(const HIP_Ping_t* cmd)
 {
+	g_controllerState.mState = MachineState_Armed;
+
 	uint16_t rxSeq = cmd->payload.seqNumber;
 	HostIface_PutData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
-	HostIface_Send();
 
 	g_controllerState.lastPing = xTaskGetTickCount();
 }
@@ -224,44 +318,56 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t* cmd)
 
 	uint16_t cmdA = HIP_MSG_THROTTLE;
 	HostIface_PutData(HIP_MSG_ACK, (uint8_t*)&cmdA, sizeof(cmdA));
-	HostIface_Send();
 
 	_dbg = 2001;
+}
+
+static void _Controller_HandleEM(const HIP_EM_t* cmd)
+{
+	for (int i = 0; i < OM_MSG_POOL_SZ; i++)
+	{
+		if (g_msgPool[i].msgId == cmd->payload.msgId)
+			g_msgPool[i].msgPeriod = cmd->payload.msgPeriod;
+	}
+
+	uint16_t cmdA = HIP_MSG_EM;
+	HostIface_PutData(HIP_MSG_ACK, (uint8_t*)&cmdA, sizeof(cmdA));
+
+	_dbg = 2002;
 }
 
 void _Controller_SendMessages()
 {
 	uint32_t now = xTaskGetTickCount();
+	now /= 100;
 
-	if ((now - g_controllerState.lastSend) > 0xffffffff)
+	for (int i = 0; i < OM_MSG_POOL_SZ; i++)
 	{
-		static uint16_t rxSeq = 0;
-		HostIface_PutData(HIP_MSG_PING, (uint8_t*)&rxSeq, sizeof(rxSeq));
-		rxSeq++;
-		HostIface_Send();
-
-		//_Controller_SendOrientation();
-		g_controllerState.lastSend = now;
-
-		HostIface_Send();
+		if ((g_msgPool[i].msgPeriod != 0)
+			&& (now - g_msgPool[i].lastEmit) > g_msgPool[i].msgPeriod)
+		{
+			g_msgPool[i].emit();
+			g_msgPool[i].lastEmit = now;
+		}
 	}
+
+	HostIface_Send();
 }
 
 void _Controller_SendOrientation()
 {
-	HIP_Payload_Orientation_t or;
+	HIP_Payload_IMU_t or;
 
 	memcpy(or.rotation, g_controllerState.lastMeas.rotation, sizeof(or.rotation));
-	memcpy(or.quaternion, g_controllerState.lastMeas.quaternion, sizeof(or.quaternion));
 	memcpy(or.gravity, g_controllerState.lastMeas.gravity, sizeof(or.gravity));
 	memcpy(or.linear_acceleration, g_controllerState.lastMeas.linear_acceleration,  sizeof(or.linear_acceleration));
 
-	HostIface_PutData(HIP_MSG_STATE_OR, (uint8_t*)&or, sizeof(or));
+	HostIface_PutData(HIP_MSG_IMU, (uint8_t*)&or, sizeof(or));
 }
 
 /******************************************************************************/
 
-static void _Watchdog_Task()
+static void _Watchdog_Task()  // TODO: enable normal watchdog
 {
 	while(1)
 	{
@@ -269,7 +375,7 @@ static void _Watchdog_Task()
 
 		if ((now - g_controllerState.lastPing) > 2000)
 		{
-			EC_Enable(0);
+			Controller_HandleFatal();
 		}
 
 		vTaskDelay(500);

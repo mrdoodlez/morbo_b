@@ -20,15 +20,10 @@ extern "C"
 
 #define HIP_MSG_THROTTLE	0x0200
 
+#define HIP_MSG_EM			0x0300
 
-/*
-*
-*
-*
-*/
-
-
-#define HIP_MSG_STATE_OR	0x0A00
+#define HIP_MSG_IMU			0x0A00
+#define HIP_MSG_PVT			0x0A01
 
 /******************************************************************************/
 
@@ -67,17 +62,16 @@ typedef struct
 typedef struct
 {
 	float rotation[3];            /* 6 axes yaw, pitch and roll */
-	float quaternion[4];          /* 6 axes quaternion */
 	float gravity[3];             /* 6 axes device frame gravity */
 	float linear_acceleration[3]; /* 6 axes device frame linear acceleration */
-} __attribute__((packed)) HIP_Payload_Orientation_t;
+} __attribute__((packed)) HIP_Payload_IMU_t;
 
 typedef struct
 {
 	HIP_Header_t header;
-	HIP_Payload_Orientation_t payload;
+	HIP_Payload_IMU_t payload;
 	uint16_t crc;
-} __attribute__((packed)) HIP_Orientation_t;
+} __attribute__((packed)) HIP_IMU_t;
 
 typedef struct
 {
@@ -100,6 +94,19 @@ typedef struct
 	HIP_Payload_Throttle_t payload;
 	uint16_t crc;
 } __attribute__((packed)) HIP_Throttle_t;
+
+typedef struct
+{
+	uint16_t msgId;
+	uint16_t msgPeriod;
+} __attribute__((packed)) HIP_Payload_EM_t;
+
+typedef struct
+{
+	HIP_Header_t header;
+	HIP_Payload_EM_t payload;
+	uint16_t crc;
+} __attribute__((packed)) HIP_EM_t;
 
 typedef struct
 {

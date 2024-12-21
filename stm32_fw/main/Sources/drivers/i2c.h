@@ -23,6 +23,10 @@ size_t I2C_Read(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 size_t I2C_Write(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,
 	uint8_t *buff, size_t count);
 
+void I2C_Lock(int dev);
+
+void I2C_Unlock(int dev);
+
 #ifdef __cplusplus
 }
 #endif

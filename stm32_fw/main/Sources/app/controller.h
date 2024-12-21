@@ -10,6 +10,14 @@ extern "C"
 {
 #endif
 
+typedef enum
+{
+	MachineState_Disarmed,
+	MachineState_Armed,
+	MachineState_Debug,
+	MachineState_HardFault,
+} MachineState_t;
+
 void Controller_Task();
 
 void Controller_NewMeas(const MDI_output_t *mdiData);
@@ -17,6 +25,8 @@ void Controller_NewMeas(const MDI_output_t *mdiData);
 void Controller_NewCommand(const HIP_Cmd_t* cmd);
 
 void Controller_HandleFatal();
+
+MachineState_t GetMachineState();
 
 #ifdef __cplusplus
 }

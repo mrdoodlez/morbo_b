@@ -1,6 +1,7 @@
 #include "i2c.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 #define I2C_ADDRESS 	0x3E
 #define I2C_LBUF_LEN	32
@@ -24,6 +25,10 @@ static struct
 	uint32_t lastError;
 
 	uint8_t lbuf[I2C_LBUF_LEN];
+
+	 SemaphoreHandle_t lock;
+	 StaticSemaphore_t xMutexBuffer;
+
 } _i2cContext;
 
 static const UBaseType_t txArrayIndex = 0;
@@ -40,8 +45,21 @@ void I2C_Init(int dev)
 		MX_I2C1_Init();
 	}
 
+	_i2cContext.lock = xSemaphoreCreateMutexStatic(&_i2cContext.xMutexBuffer);
 	_i2cContext.t = I2C_Transaction_None;
 	_i2cContext.lastError = HAL_I2C_ERROR_NONE;
+}
+
+void I2C_Lock(int dev)
+{
+	(void)dev;
+	xSemaphoreTake(_i2cContext.lock, 0xFFFFFFFF);
+}
+
+void I2C_Unlock(int dev)
+{
+	(void)dev;
+	xSemaphoreGive(_i2cContext.lock);
 }
 
 size_t I2C_Read(int dev, uint8_t addr, uint32_t regAddr, I2C_RegAddrLen_t alen,

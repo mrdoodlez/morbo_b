@@ -12,6 +12,9 @@ static const UBaseType_t rxArrayIndex = 0;
 
 static void MX_USART1_UART_Init(void);
 
+int rxErr = HAL_OK;
+int txErr = HAL_OK;
+
 /******************************************************************************/
 
 void Serial_Init(int dev)
@@ -28,7 +31,8 @@ size_t Serial_Read(int dev, uint8_t *buff, size_t count)
 	{
 		rxTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		if (HAL_UART_Receive_IT(&huart1, buff, count) != HAL_OK)
+		rxErr = HAL_OK;
+		if ((rxErr = HAL_UART_Receive_IT(&huart1, buff, count)) != HAL_OK)
 		{
 			Error_Handler();
 		}
@@ -51,7 +55,8 @@ size_t Serial_Write(int dev, uint8_t *buff, size_t count)
 	{
 		txTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		if (HAL_UART_Transmit_IT(&huart1, buff, count) != HAL_OK)
+		txErr = HAL_OK;
+		if ((txErr = HAL_UART_Transmit_IT(&huart1, buff, count)) != HAL_OK)
 		{
 			Error_Handler();
 		}

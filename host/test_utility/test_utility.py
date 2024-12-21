@@ -119,8 +119,14 @@ LEN_PING = 2
 CMD_THROTTLE = 0x0200
 LEN_THROTTLE = 4 * 4 + 1
 
+CMD_EM = 0x0300
+LEN_EM = 2 + 2
+
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
+
+MSG_IMU = 0x0A00
+MSG_PVT = 0x0A01
 
 CRC = 0xCACB
 
@@ -132,6 +138,8 @@ ackRx = -1
 
 pingSeq = 0
 pingRx = -1
+
+doExit = False
 
 def throttle_set(val, port):
 	global ackRx, ackAwait
@@ -173,7 +181,7 @@ def throttle_enable(en, port):
 	time.sleep(0.5)
 
 	if ackRx != ackAwait:
-		print("WRN: throttle enable not acked")
+		print("WRN: command not acked")
 
 	ackRx = ackAwait = -1
 
@@ -194,10 +202,44 @@ def handle_acknak(ack, payload):
 	else:
 		ackRx = cmd
 
+def handle_imu(payload):
+	print(struct.unpack('<9f', b''.join(payload)))
+
+def em_command(msgId, msgPeriod, port):
+	global ackRx, ackAwait
+
+	msgPeriod = int(msgPeriod)
+	msgPeriod = int(msgPeriod / 100)
+
+	if msgId == "imu":
+		msgId = MSG_IMU
+	elif msgId == "pvt":
+		msgId = MSG_PVT
+	else:
+		print("command not supported")
+		return
+
+	cmd = CMD_EM
+	len = LEN_EM
+
+	em = struct.pack('<2sHHHHH', b'mb', cmd, len, msgId, msgPeriod, CRC)
+	port.write(em)
+
+	ackAwait = CMD_EM
+
+	time.sleep(0.5)
+
+	if ackRx != ackAwait:
+		print("WRN: command not acked")
+
+	ackRx = ackAwait = -1
+
+	pass
 
 def pinger_function(name, port):
 	global pingSeq
-	while True:
+	global doExit
+	while not doExit:
 		cmd = CMD_PING
 		len = LEN_PING
 
@@ -215,7 +257,8 @@ def pinger_function(name, port):
 
 
 def console_function(name, port):
-	while True:
+	global doExit
+	while not doExit:
 		command = input("> ").split()
 		if command[0] == 't':
 			if command[1] == 'e':
@@ -224,7 +267,10 @@ def console_function(name, port):
 				throttle_enable(False, port)
 			else:
 				throttle_set(int(command[1]) / 100.0, port)
-
+		elif command[0] == "em":
+			em_command(command[1], command[2], port)
+		if command[0] == 'q':
+			doExit = True
 
 def listener_function(name, port):
 	ProtoState_m = 0
@@ -243,7 +289,9 @@ def listener_function(name, port):
 	payload = []
 	rxCrc = -1
 
-	while True:
+	global doExit
+
+	while not doExit:
 		c = port.read(1)
 		if c == b'':
 			continue
@@ -289,6 +337,8 @@ def listener_function(name, port):
 					handle_acknak(1, payload)
 				elif cmd == MSG_NAK:
 					handle_acknak(0, payload)
+				elif cmd == MSG_IMU:
+					handle_imu(payload)
 
 			state = ProtoState_m
 

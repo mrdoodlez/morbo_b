@@ -4,8 +4,6 @@
 #include "serial.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
-#include "semphr.h"
 
 #define HIP_SERIAL				0
 
@@ -20,17 +18,17 @@ extern int _dbg;
 /******************************************************************************/
 struct
 {
-	QueueHandle_t hQueue;
-	uint32_t msgCount;
-
 	HIP_Cmd_t rxCmd;
 	uint16_t rxLen;
+	uint32_t numRxBytes;
+} g_decoderCtx;
 
+struct
+{
 	uint8_t txBuffer[HIP_TX_SIZE];
 	uint8_t txLen;
-
-	SemaphoreHandle_t txSem;
-} g_decoderCtx;
+	uint32_t numTxBytes;
+} g_coderCtx;
 
 /******************************************************************************/
 
@@ -38,25 +36,12 @@ static TaskHandle_t _hListener = NULL;
 static StaticTask_t _hipListenerBuffer;
 StackType_t _hipListenerStack[HIP_STACK_SIZE / sizeof(StackType_t)];
 
-static TaskHandle_t _hSender = NULL;
-static StaticTask_t _hipsenderBuffer;
-StackType_t _hipSenderStack[HIP_STACK_SIZE / sizeof(StackType_t)];
-
-static StaticSemaphore_t _txSemBuffer;
-
 static void _HostIface_Listen();
-static void _HostIface_Send();
-
 static void _HostIface_HandleCommand(const HIP_Cmd_t* cmd);
 
 int HostIface_Start()
 {
-	g_decoderCtx.txSem = xSemaphoreCreateBinaryStatic(&_txSemBuffer);
-
-	if ((_hSender = xTaskCreateStatic((TaskFunction_t)_HostIface_Send,
-			(const char *)"HIP_SNDER", HIP_STACK_SIZE / sizeof(StackType_t),
-			NULL, 3, _hipSenderStack, &_hipsenderBuffer)) == NULL)
-		return -20;
+	//g_decoderCtx.txSem = xSemaphoreCreateBinaryStatic(&_txSemBuffer);
 
 	if ((_hListener = xTaskCreateStatic((TaskFunction_t)_HostIface_Listen,
 			(const char *)"HIP_LSTNR", HIP_STACK_SIZE / sizeof(StackType_t),
@@ -68,7 +53,7 @@ int HostIface_Start()
 
 int HostIface_PutData(uint16_t id, const uint8_t *buff, uint16_t len)
 {
-	HIP_Cmd_t *txCmd = (HIP_Cmd_t*)(g_decoderCtx.txBuffer + g_decoderCtx.txLen);
+	HIP_Cmd_t *txCmd = (HIP_Cmd_t*)(g_coderCtx.txBuffer + g_coderCtx.txLen);
 
 	txCmd->header.m = 'm';
 	txCmd->header.b = 'b';
@@ -79,34 +64,27 @@ int HostIface_PutData(uint16_t id, const uint8_t *buff, uint16_t len)
 
 	*(uint16_t*)&(txCmd->payload[len]) = 0xCACB; //replace with real CRC
 
-	g_decoderCtx.txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
+	g_coderCtx.txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
 
 	return 0;
 }
 
 int HostIface_Send()
 {
-	xSemaphoreGive(g_decoderCtx.txSem);
+	if (g_coderCtx.txLen > 0)
+	{
+		int sz = g_coderCtx.txLen;
+		Serial_Write(HIP_SERIAL, g_coderCtx.txBuffer, sz);
+		g_coderCtx.numTxBytes += sz;
+		g_coderCtx.txLen = 0;
+	}
+
 	return 0;
 }
 
 /******************************************************************************/
 
-static void _HostIface_Send()
-{
-	while (1)
-	{
-		if (xSemaphoreTake(g_decoderCtx.txSem, 0xFFFFFFFF) == pdTRUE)
-		{
-			Serial_Write(HIP_SERIAL, g_decoderCtx.txBuffer, g_decoderCtx.txLen);
-			g_decoderCtx.txLen = 0;
-		}
-		else
-		{
-			// TODO: handle error
-		}
-	}
-}
+
 
 static void _HostIface_Listen()
 {
@@ -129,6 +107,7 @@ static void _HostIface_Listen()
 		uint8_t c;
 		if (Serial_Read(HIP_SERIAL, &c, 1) == 1)
 		{
+			g_decoderCtx.numRxBytes++;
 			switch(protoState)
 			{
 				case ProtoState_b:

@@ -104,6 +104,7 @@ void IMU_Init(uint8_t i2cDev)
 
 static void IMU_Process(TimerHandle_t xTimer)
 {
+	I2C_Lock(g_IMU_State.i2c);
 	/*
 	uint8_t val;
 	if (I2C_Read(g_IMU_State.i2c, ASM330LHH_I2C_ADD_L, 0x0f, I2C_RegAddrLen_8, &val, 1) != 1)
@@ -143,6 +144,8 @@ static void IMU_Process(TimerHandle_t xTimer)
 		float_array_set(g_IMU_State.data_out.gravity, 0, MDI_NUM_AXES);
 		float_array_set(g_IMU_State.data_out.linear_acceleration, 0, MDI_NUM_AXES);
 	}
+
+	I2C_Unlock(g_IMU_State.i2c);
 }
 
 /**

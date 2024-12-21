@@ -3,6 +3,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "gpio.h"
+#include "i2c.h"
 
 #define PCA9685_ADDR					0x80
 
@@ -31,10 +32,16 @@ int EC_Init(int i2cDev)
 
 void EC_SetThrottle(EC_Engine_t engine, float throttle)
 {
+	// TODO: remove it
+	if (throttle > 0.15)
+		throttle = 0.15;
+
 	if (throttle > 1.0)
 		throttle = 1.0;
 
+	I2C_Lock(_i2cDev);
 	PCA9685_WriteMicroseconds(engine, (1.0 + throttle) * 1.0e3);
+	I2C_Unlock(_i2cDev);
 }
 
 void EC_Enable(uint8_t en)

@@ -28,7 +28,7 @@ def rpy_to_rot_zxy(phi, theta, psi):
                       np.cos(phi) * np.cos(theta)]])
 
 def rot_to_quat(R):
-    tr = np.trace(R)    
+    tr = np.trace(R)
     if tr > 0:
         S = 2.0 * np.sqrt(tr + 1.0)
         q_w = 0.25 * S
@@ -53,7 +53,7 @@ def rot_to_quat(R):
         q_x = (R[0, 2] + R[2, 0]) / S
         q_y = (R[1, 2] + R[2, 1]) / S
         q_z = 0.25 * S
-    
+
     return np.array([q_w, q_x, q_y, q_z])
 
 # quaternion to body-to-world rotation matrix
@@ -142,12 +142,12 @@ def controller(t, s):
     kdr3 = 11.0
     F = mass * (constants.g + z_dotdot_des \
                   + kdr3 * (z_dot_des - z_dot)) + kpr3 * (z_des - z)
-    
+
     F = np.maximum(0.0, F)
 
     kpr1 = kpr3 / mass
     kdr1 = kdr3 / mass
-    
+
     kpr2 = kpr1
     kdr2 = kdr1
 
@@ -213,7 +213,7 @@ def dxdt(t, s):
                             [p,  0, -r,  q], \
                             [q,  r,  0, -p], \
                             [r, -q,  p,  0]]) @ quat + K_quat * quaterror * quat
-    
+
     # angular acceleration
     omega = np.array([p, q, r])
     omega_dot = invI @ (M - np.cross(omega, I @ omega))
@@ -272,7 +272,7 @@ for quat in quats:
     bRw = quat_to_rot(quat)
     phi = np.arcsin(bRw[1][2]) # roll
     the = np.arctan2(-bRw[0][2] / np.cos(phi), bRw[2][2] / np.cos(phi)) # pitch
-    psi = np.arctan2(-bRw[1][0] / np.cos(phi), bRw[1][1] / np.cos(phi)) # yaw    
+    psi = np.arctan2(-bRw[1][0] / np.cos(phi), bRw[1][1] / np.cos(phi)) # yaw
     phis.append(phi)
     thes.append(the)
     psis.append(psi)

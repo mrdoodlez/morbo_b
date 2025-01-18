@@ -19,57 +19,54 @@ int txErr = HAL_OK;
 
 void Serial_Init(int dev)
 {
-	if (dev == 0)
-	{
-		MX_USART1_UART_Init();
-	}
+    if (dev == 0)
+    {
+        MX_USART1_UART_Init();
+    }
 }
 
 size_t Serial_Read(int dev, uint8_t *buff, size_t count)
 {
-	if (dev == 0)
-	{
-		rxTaskToNotify = xTaskGetCurrentTaskHandle();
+    if (dev == 0)
+    {
+        rxTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		rxErr = HAL_OK;
-		if ((rxErr = HAL_UART_Receive_IT(&huart1, buff, count)) != HAL_OK)
-		{
-			Error_Handler();
-		}
+        rxErr = HAL_OK;
+        if ((rxErr = HAL_UART_Receive_IT(&huart1, buff, count)) != HAL_OK)
+        {
+            Error_Handler();
+        }
 
-		const TickType_t xMaxBlockTime = 0xffffffff;
-		uint32_t ulNotificationValue
-			= ulTaskNotifyTakeIndexed(rxArrayIndex, pdTRUE, xMaxBlockTime);
+        const TickType_t xMaxBlockTime = 0xffffffff;
+        uint32_t ulNotificationValue = ulTaskNotifyTakeIndexed(rxArrayIndex, pdTRUE, xMaxBlockTime);
 
-		if( ulNotificationValue == 1 )
-			return count;
-	}
+        if (ulNotificationValue == 1)
+            return count;
+    }
 
-	return 0;
-
+    return 0;
 }
 
 size_t Serial_Write(int dev, uint8_t *buff, size_t count)
-{	
-	if (dev == 0)
-	{
-		txTaskToNotify = xTaskGetCurrentTaskHandle();
+{
+    if (dev == 0)
+    {
+        txTaskToNotify = xTaskGetCurrentTaskHandle();
 
-		txErr = HAL_OK;
-		if ((txErr = HAL_UART_Transmit_IT(&huart1, buff, count)) != HAL_OK)
-		{
-			Error_Handler();
-		}
+        txErr = HAL_OK;
+        if ((txErr = HAL_UART_Transmit_IT(&huart1, buff, count)) != HAL_OK)
+        {
+            Error_Handler();
+        }
 
-		const TickType_t xMaxBlockTime = pdMS_TO_TICKS(200); // TODO: use flags or else
-		uint32_t ulNotificationValue
-			= ulTaskNotifyTakeIndexed(txArrayIndex, pdTRUE, xMaxBlockTime);
+        const TickType_t xMaxBlockTime = pdMS_TO_TICKS(200); // TODO: use flags or else
+        uint32_t ulNotificationValue = ulTaskNotifyTakeIndexed(txArrayIndex, pdTRUE, xMaxBlockTime);
 
-		if( ulNotificationValue == 1 )
-			return count;
-	}
+        if (ulNotificationValue == 1)
+            return count;
+    }
 
-	return 0;
+    return 0;
 }
 
 /******************************************************************************/
@@ -80,7 +77,7 @@ size_t Serial_Write(int dev, uint8_t *buff, size_t count)
  */
 void USART1_IRQHandler(void)
 {
-	HAL_UART_IRQHandler(&huart1);
+    HAL_UART_IRQHandler(&huart1);
 }
 
 /******************************************************************************/
@@ -92,34 +89,34 @@ void USART1_IRQHandler(void)
  */
 static void MX_USART1_UART_Init(void)
 {
-	huart1.Instance = USART1;
-	huart1.Init.BaudRate = 9600; //115200;
-	huart1.Init.WordLength = UART_WORDLENGTH_8B;
-	huart1.Init.StopBits = UART_STOPBITS_1;
-	huart1.Init.Parity = UART_PARITY_NONE;
-	huart1.Init.Mode = UART_MODE_TX_RX;
-	huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-	huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-	huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-	huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-	huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 9600; // 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
 
-	if (HAL_UART_Init(&huart1) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
-	{
-		Error_Handler();
-	}
-	if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
-	{
-		Error_Handler();
-	}
+    if (HAL_UART_Init(&huart1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+    {
+        Error_Handler();
+    }
+    if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+    {
+        Error_Handler();
+    }
 }
 
 /******************************************************************************/
@@ -132,41 +129,41 @@ static void MX_USART1_UART_Init(void)
  */
 void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 {
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
-	RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
-	if (huart->Instance == USART1)
-	{
-		/** Initializes the peripherals clocks
-		 */
-		PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
-		PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+    if (huart->Instance == USART1)
+    {
+        /** Initializes the peripherals clocks
+         */
+        PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+        PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
 
-		if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-		{
-			Error_Handler();
-		}
+        if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+        {
+            Error_Handler();
+        }
 
-		/* Peripheral clock enable */
-		__HAL_RCC_USART1_CLK_ENABLE();
-		__HAL_RCC_GPIOA_CLK_ENABLE();
+        /* Peripheral clock enable */
+        __HAL_RCC_USART1_CLK_ENABLE();
+        __HAL_RCC_GPIOA_CLK_ENABLE();
 
-		/**USART1 GPIO Configuration
-		PA9     ------> USART1_TX
-		PA10     ------> USART1_RX
-		*/
-		GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
-		GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-		GPIO_InitStruct.Pull = GPIO_PULLUP;
-		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-		GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        /**USART1 GPIO Configuration
+        PA9     ------> USART1_TX
+        PA10     ------> USART1_RX
+        */
+        GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_PULLUP;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+        GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-		/* USART1 interrupt Init */
-		HAL_NVIC_SetPriority(USART1_IRQn,
-			configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
-		HAL_NVIC_EnableIRQ(USART1_IRQn);
-	}
+        /* USART1 interrupt Init */
+        HAL_NVIC_SetPriority(USART1_IRQn,
+                             configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, 0);
+        HAL_NVIC_EnableIRQ(USART1_IRQn);
+    }
 }
 
 /**
@@ -177,24 +174,24 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
  */
 void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == USART1)
-	{
-		/* Reset peripherals */
-		__HAL_RCC_USART1_FORCE_RESET();
-		__HAL_RCC_USART1_RELEASE_RESET();
+    if (huart->Instance == USART1)
+    {
+        /* Reset peripherals */
+        __HAL_RCC_USART1_FORCE_RESET();
+        __HAL_RCC_USART1_RELEASE_RESET();
 
-		/* Peripheral clock disable */
-		__HAL_RCC_USART1_CLK_DISABLE();
+        /* Peripheral clock disable */
+        __HAL_RCC_USART1_CLK_DISABLE();
 
-		/**USART1 GPIO Configuration
-		PA9     ------> USART1_TX
-		PA10     ------> USART1_RX
-		*/
-		HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
+        /**USART1 GPIO Configuration
+        PA9     ------> USART1_TX
+        PA10     ------> USART1_RX
+        */
+        HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
 
-		/* USART1 interrupt DeInit */
-		HAL_NVIC_DisableIRQ(USART1_IRQn);
-	}
+        /* USART1 interrupt DeInit */
+        HAL_NVIC_DisableIRQ(USART1_IRQn);
+    }
 }
 
 /**
@@ -206,16 +203,16 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *huart)
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
-	if (txTaskToNotify != 0)
-	{
-		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (txTaskToNotify != 0)
+    {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-		vTaskNotifyGiveIndexedFromISR(txTaskToNotify,
-								  txArrayIndex,
-								  &xHigherPriorityTaskWoken);
-		txTaskToNotify = NULL;
-		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-	}
+        vTaskNotifyGiveIndexedFromISR(txTaskToNotify,
+                                      txArrayIndex,
+                                      &xHigherPriorityTaskWoken);
+        txTaskToNotify = NULL;
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
 }
 
 /**
@@ -227,16 +224,16 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
 {
-	if (rxTaskToNotify != 0)
-	{
-		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (rxTaskToNotify != 0)
+    {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-		vTaskNotifyGiveIndexedFromISR(rxTaskToNotify,
-								  rxArrayIndex,
-								  &xHigherPriorityTaskWoken);
-		rxTaskToNotify = NULL;
-		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-	}
+        vTaskNotifyGiveIndexedFromISR(rxTaskToNotify,
+                                      rxArrayIndex,
+                                      &xHigherPriorityTaskWoken);
+        rxTaskToNotify = NULL;
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
 }
 
 /**
@@ -248,5 +245,5 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *UartHandle)
 {
-	Error_Handler();
+    Error_Handler();
 }

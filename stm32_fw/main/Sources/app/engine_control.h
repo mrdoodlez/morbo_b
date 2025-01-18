@@ -9,10 +9,10 @@ extern "C" {
 
 typedef enum
 {
-	EC_Engine_1 = 0,
-	EC_Engine_2,
-	EC_Engine_3,
-	EC_Engine_4,
+    EC_Engine_1 = 0,
+    EC_Engine_2,
+    EC_Engine_3,
+    EC_Engine_4,
 } EC_Engine_t;
 
 int EC_Init(int i2cDev);

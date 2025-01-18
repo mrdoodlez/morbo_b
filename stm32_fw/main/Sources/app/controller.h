@@ -12,10 +12,10 @@ extern "C"
 
 typedef enum
 {
-	MachineState_Disarmed,
-	MachineState_Armed,
-	MachineState_Debug,
-	MachineState_HardFault,
+    MachineState_Disarmed,
+    MachineState_Armed,
+    MachineState_Debug,
+    MachineState_HardFault,
 } MachineState_t;
 
 void Controller_Task();

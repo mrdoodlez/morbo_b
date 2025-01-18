@@ -9,7 +9,7 @@ extern "C" {
 
 typedef enum
 {
-	GPIO_Channel_0,
+    GPIO_Channel_0,
 } GPIO_Channel_t;
 
 int GPIO_Init();

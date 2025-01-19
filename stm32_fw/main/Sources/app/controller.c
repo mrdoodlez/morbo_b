@@ -6,6 +6,7 @@
 #include "host_interface_cmds.h"
 #include "imu_reader.h"
 #include "engine_control.h"
+#include "scenarios.h"
 
 #include <math.h>
 
@@ -22,6 +23,14 @@
 #define SNDR_STACK_SIZE 1024
 
 extern int _dbg;
+
+typedef enum
+{
+    MachineState_Disarmed,
+    MachineState_Armed,
+    MachineState_Debug,
+    MachineState_HardFault,
+} MachineState_t;
 
 typedef enum
 {
@@ -54,6 +63,7 @@ struct
     uint32_t lastPing;
 
     MachineState_t mState;
+    float pwm[4];
 } g_controllerState;
 
 /******************************************************************************/
@@ -70,6 +80,7 @@ static void _Controller_Process();
 static void _Controller_SendMessages();
 
 void _Controller_SendOrientation();
+void _Controller_SendPVT();
 
 /******************************************************************************/
 
@@ -82,7 +93,7 @@ struct
 } g_msgPool[] =
     {
         {.msgId = HIP_MSG_IMU, .emit = _Controller_SendOrientation},
-        {.msgId = HIP_MSG_PVT, .emit = 0},
+        {.msgId = HIP_MSG_PVT, .emit = _Controller_SendPVT},
 };
 
 /******************************************************************************/
@@ -109,6 +120,8 @@ static void _Sender_Task();
 
 void Controller_Task()
 {
+    vTaskDelay(1000);
+
     g_controllerState.mState = MachineState_Disarmed;
 
     if ((_hWatchdog = xTaskCreateStatic((TaskFunction_t)_Watchdog_Task,
@@ -189,24 +202,31 @@ static void _Controller_Process()
 
         for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
         {
-            EC_SetThrottle(en, 0.1);
+            g_controllerState.pwm[en] = 0.1;
+            EC_SetThrottle(en, g_controllerState.pwm[en]);
         }
     }
     else if (g_controllerState.mState == MachineState_Armed)
     {
-        float pitch = g_controllerState.lastMeas.rotation[1];
-        float roll = g_controllerState.lastMeas.rotation[2];
+        uint64_t currUs = Controller_GetUS();
+        FlightScenario_SetInputs(FlightScenario_Input_Time, (void *)&currUs);
+        FlightScenario_SetInputs(FlightScenario_Input_Meas, (void *)&g_controllerState.lastMeas);
 
-        pitch = pitch / 180 * 3.145159;
-        roll = roll / 180 * 3.145159;
+        ControlOutputs_t output;
+        FlightScenario_Result_t fcRes = FlightScenario(&output);
 
-        EC_SetThrottle(EC_Engine_1, 0.1 + fabs(pitch) * 30);
-        EC_SetThrottle(EC_Engine_2, 0.1 + fabs(pitch) * 30);
-
-        EC_SetThrottle(EC_Engine_3, 0.1 + fabs(roll) * 30);
-        EC_SetThrottle(EC_Engine_4, 0.1 + fabs(roll) * 30);
-
-        roll = roll;
+        if (fcRes == FlightScenario_Result_OK)
+        {
+            for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+            {
+                g_controllerState.pwm[en] = output.pwm[en];
+                EC_SetThrottle(en, g_controllerState.pwm[en]);
+            }
+        }
+        else if (fcRes == FlightScenario_Result_Error)
+        {
+            g_controllerState.mState = MachineState_HardFault;
+        }
     }
 
     prevState = g_controllerState.mState;
@@ -247,11 +267,6 @@ void Controller_HandleFatal()
 {
     g_controllerState.mState = MachineState_HardFault;
     EC_Enable(0);
-}
-
-MachineState_t GetMachineState()
-{
-    return g_controllerState.mState;
 }
 
 /******************************************************************************/
@@ -296,23 +311,22 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd)
     if ((cmd->payload.flags & HIP_Throttle_Flags_Enable) == 0)
     {
         EC_Enable(0);
-        for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
-        {
-            EC_SetThrottle(en, 0.0);
-        }
     }
     else
     {
-        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng1) != 0)
-            EC_SetThrottle(EC_Engine_1, cmd->payload.throttle[0]);
-        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng2) != 0)
-            EC_SetThrottle(EC_Engine_2, cmd->payload.throttle[1]);
-        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng3) != 0)
-            EC_SetThrottle(EC_Engine_3, cmd->payload.throttle[2]);
-        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng4) != 0)
-            EC_SetThrottle(EC_Engine_4, cmd->payload.throttle[3]);
-
         EC_Enable(1);
+
+        float throttles[4] = {-1, -1, -1, -1};
+        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng1) != 0)
+            throttles[0] = cmd->payload.throttle[0];
+        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng2) != 0)
+            throttles[1] = cmd->payload.throttle[1];
+        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng3) != 0)
+            throttles[2] = cmd->payload.throttle[2];
+        if ((cmd->payload.flags & HIP_Throttle_Flags_Eng4) != 0)
+            throttles[3] = cmd->payload.throttle[3];
+
+        FlightScenario_SetInputs(FlightScenario_Debug, &(throttles[0]));
     }
 
     uint16_t cmdA = HIP_MSG_THROTTLE;
@@ -363,6 +377,11 @@ void _Controller_SendOrientation()
     HostIface_PutData(HIP_MSG_IMU, (uint8_t *)& or, sizeof(or));
 }
 
+void _Controller_SendPVT()
+{
+
+}
+
 /******************************************************************************/
 
 static void _Watchdog_Task() // TODO: enable normal watchdog
@@ -378,4 +397,11 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
 
         vTaskDelay(500);
     }
+}
+
+/******************************************************************************/
+
+uint64_t Controller_GetUS()
+{
+    return 1000LL * xTaskGetTickCount();
 }

@@ -7,7 +7,7 @@
 #include "task.h"
 #include "timers.h"
 
-#define ALGO_FREQ 100 /* Algorithm frequency 100Hz */
+#define ALGO_FREQ 250
 #define ALGO_PERIOD_MS (1000 / ALGO_FREQ)
 #define ACC_ODR ((float)ALGO_FREQ)
 #define ACC_FS 2 /* FS = <-2g, 2g> */
@@ -127,8 +127,8 @@ static void IMU_Process(TimerHandle_t xTimer)
     g_IMU_State.data_in.Gyro[1] = (float)g_IMU_State.gyrAxes.y * FROM_MDPS_TO_DPS;
     g_IMU_State.data_in.Gyro[2] = (float)g_IMU_State.gyrAxes.z * FROM_MDPS_TO_DPS;
 
+    g_IMU_State.timestamp = GetTick() * 1000;
     g_IMU_State.data_in.Timestamp = g_IMU_State.timestamp;
-    g_IMU_State.timestamp += ALGO_PERIOD_US;
 
     if (g_IMU_State.discardedCount == SAMPLETODISCARD)
     {

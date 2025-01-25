@@ -56,7 +56,7 @@ def rot_to_quat(R):
 
     return np.array([q_w, q_x, q_y, q_z])
 
-# quaternion to body-to-world rotation matrix
+# quaternion to world-to-body rotation matrix
 def quat_to_rot(quat):
     qnorm = np.linalg.norm(quat)
     if (qnorm > 0.0):

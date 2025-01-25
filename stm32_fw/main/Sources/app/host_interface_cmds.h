@@ -23,7 +23,7 @@ extern "C"
 #define HIP_MSG_EM 0x0300
 
 #define HIP_MSG_IMU 0x0A00
-#define HIP_MSG_PVT 0x0A01
+#define HIP_MSG_PAT 0x0A01
 
     /******************************************************************************/
 
@@ -72,6 +72,20 @@ extern "C"
         HIP_Payload_IMU_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_IMU_t;
+
+    typedef struct
+    {
+        float position[3];
+        float rotation[3];
+        float time;
+    } __attribute__((packed)) HIP_Payload_PAT_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_PAT_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_PAT_t;
 
     typedef struct
     {

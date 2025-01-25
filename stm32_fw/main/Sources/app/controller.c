@@ -7,6 +7,7 @@
 #include "imu_reader.h"
 #include "engine_control.h"
 #include "scenarios.h"
+#include "motion_di.h"
 
 #include <math.h>
 
@@ -80,7 +81,7 @@ static void _Controller_Process();
 static void _Controller_SendMessages();
 
 void _Controller_SendOrientation();
-void _Controller_SendPVT();
+void _Controller_SendPAT();
 
 /******************************************************************************/
 
@@ -93,7 +94,7 @@ struct
 } g_msgPool[] =
     {
         {.msgId = HIP_MSG_IMU, .emit = _Controller_SendOrientation},
-        {.msgId = HIP_MSG_PVT, .emit = _Controller_SendPVT},
+        {.msgId = HIP_MSG_PAT, .emit = _Controller_SendPAT},
 };
 
 /******************************************************************************/
@@ -208,9 +209,15 @@ static void _Controller_Process()
     }
     else if (g_controllerState.mState == MachineState_Armed)
     {
-        uint64_t currUs = Controller_GetUS();
-        FlightScenario_SetInputs(FlightScenario_Input_Time, (void *)&currUs);
-        FlightScenario_SetInputs(FlightScenario_Input_Meas, (void *)&g_controllerState.lastMeas);
+        struct {
+            uint64_t time;
+            MDI_output_t meas;
+        } meas;
+
+        meas.time = Controller_GetUS();
+        meas.meas = g_controllerState.lastMeas;
+
+        FlightScenario_SetInputs(FlightScenario_Input_Meas, (void *)&meas);
 
         ControlOutputs_t output;
         FlightScenario_Result_t fcRes = FlightScenario(&output);
@@ -326,7 +333,7 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd)
         if ((cmd->payload.flags & HIP_Throttle_Flags_Eng4) != 0)
             throttles[3] = cmd->payload.throttle[3];
 
-        FlightScenario_SetInputs(FlightScenario_Debug, &(throttles[0]));
+        FlightScenario_SetInputs(FlightScenario_Input_DebugPwms, &(throttles[0]));
     }
 
     uint16_t cmdA = HIP_MSG_THROTTLE;
@@ -368,7 +375,7 @@ void _Controller_SendMessages()
 
 void _Controller_SendOrientation()
 {
-    HIP_Payload_IMU_t or ;
+    HIP_Payload_IMU_t or;
 
     memcpy(or.rotation, g_controllerState.lastMeas.rotation, sizeof(or.rotation));
     memcpy(or.gravity, g_controllerState.lastMeas.gravity, sizeof(or.gravity));
@@ -377,9 +384,17 @@ void _Controller_SendOrientation()
     HostIface_PutData(HIP_MSG_IMU, (uint8_t *)& or, sizeof(or));
 }
 
-void _Controller_SendPVT()
+void _Controller_SendPAT()
 {
+    FlightScenario_PAT_t pat;
+    FlightScenario_GetPAT(&pat);
 
+    HIP_Payload_PAT_t ppat;
+    memcpy(ppat.position, pat.p, sizeof(ppat.position));
+    memcpy(ppat.rotation, pat.r, sizeof(ppat.rotation));
+    ppat.time = pat.time;
+
+    HostIface_PutData(HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
 }
 
 /******************************************************************************/

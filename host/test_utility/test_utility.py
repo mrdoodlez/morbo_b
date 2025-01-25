@@ -133,7 +133,7 @@ MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
 MSG_IMU = 0x0A00
-MSG_PVT = 0x0A01
+MSG_PAT = 0x0A01
 
 CRC = 0xCACB
 
@@ -227,9 +227,23 @@ def handle_imu(payload):
     global pos_yaw, pos_pitch, pos_roll
     imu_data = struct.unpack('<9f', b''.join(payload))
     pos_yaw = imu_data[0]
-    pos_pitch = imu_data[2]
-    pos_roll = imu_data[1]
+    pos_pitch = imu_data[1]
+    pos_roll = imu_data[2]
     print(pos_roll, pos_pitch, pos_yaw)
+
+def handle_pat(payload):
+    global pos_yaw, pos_pitch, pos_roll
+    global pos_x, pos_y, pos_z
+    pat_data = struct.unpack('<7f', b''.join(payload))
+    pos_x = pat_data[0]
+    pos_y = pat_data[1]
+    pos_z = pat_data[2]
+    pos_yaw = pat_data[3]
+    pos_pitch = pat_data[4]
+    pos_roll = pat_data[5]
+    time = pat_data[6]
+
+    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_yaw, pos_pitch, pos_roll, ")")
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -239,8 +253,8 @@ def em_command(msgId, msgPeriod, port):
 
     if msgId == "imu":
         msgId = MSG_IMU
-    elif msgId == "pvt":
-        msgId = MSG_PVT
+    elif msgId == "pat":
+        msgId = MSG_PAT
     else:
         print("command not supported")
         return
@@ -365,6 +379,8 @@ def listener_function(name, port):
                     handle_acknak(0, payload)
                 elif cmd == MSG_IMU:
                     handle_imu(payload)
+                elif cmd == MSG_PAT:
+                    handle_pat(payload)
 
             state = ProtoState_m
 
@@ -389,6 +405,7 @@ def draw_model(vertices, normals):
     i = 0
     for f in vertices:
         glNormal3fv(normals[i])
+        glColor3f(0, 0, 1)
         for vertex in f:
             glVertex3fv(vertex)
         i += 1
@@ -408,7 +425,14 @@ def draw_xy_plane():
     for y in range(-10, 11):
         glVertex3fv((-10, y, 0))
         glVertex3fv((10, y, 0))
+    glEnd()
 
+def draw_trajectory(traj):
+    glLineWidth(2)  # Set line width for trajectory
+    glColor3fv((1, 1, 1))  # White color for the trajectory
+    glBegin(GL_LINE_STRIP)  # Draw a continuous line for the trajectory
+    for point in traj:
+        glVertex3fv(point)  # Draw each point in the trajectory
     glEnd()
 
 def setup_lighting():
@@ -450,9 +474,15 @@ def visio_function(name):
 
     clock = pygame.time.Clock()
 
+    traj = []
+
     global pos_yaw
     global pos_pitch
     global pos_roll
+
+    global pos_x
+    global pos_y
+    global pos_z
 
     global doExit
 
@@ -463,16 +493,21 @@ def visio_function(name):
 
         glPushMatrix()
 
-        glRotatef(pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
-        glRotatef(pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
+        glTranslatef(pos_x, pos_y, 0)
+
         glRotatef(pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
+        glRotatef(pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
+        glRotatef(pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
 
         # Draw the STL model
         draw_model(faces, normals)
 
         glPopMatrix()
-        pygame.display.flip()
 
+        traj.append((pos_x, pos_y, 0))
+        draw_trajectory(traj)
+
+        pygame.display.flip()
         clock.tick(60)
 
     pygame.quit()

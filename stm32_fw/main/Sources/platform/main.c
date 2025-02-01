@@ -8,7 +8,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define MAIN_STACK_SIZE 1024
+#define MAIN_STACK_SIZE 4096
 
 static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);

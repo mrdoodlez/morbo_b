@@ -237,7 +237,7 @@ def handle_pat(payload):
     pat_data = struct.unpack('<7f', b''.join(payload))
     pos_x = pat_data[0]
     pos_y = pat_data[1]
-    pos_z = pat_data[2]
+    pos_z = 0 # pat_data[2]
     pos_yaw = pat_data[3]
     pos_pitch = pat_data[4]
     pos_roll = pat_data[5]
@@ -493,7 +493,7 @@ def visio_function(name):
 
         glPushMatrix()
 
-        glTranslatef(pos_x, pos_y, 0)
+        glTranslatef(pos_x, pos_y, pos_z)
 
         glRotatef(pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
         glRotatef(pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
@@ -504,7 +504,7 @@ def visio_function(name):
 
         glPopMatrix()
 
-        traj.append((pos_x, pos_y, 0))
+        traj.append((pos_x, pos_y, pos_z))
         draw_trajectory(traj)
 
         pygame.display.flip()

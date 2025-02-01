@@ -47,7 +47,8 @@ set (MFPU                     "-mfpu=fpv4-sp-d16")
 set (MFLOAT_ABI               "-mfloat-abi=hard")
 set (RUNTIME_LIBRARY          "--specs=nano.specs")
 set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
-set (DI_LIB                   "/media/stanislav/projects/projects/X-CUBE-MEMS1/Middlewares/ST/STM32_MotionDI_Library/Lib/MotionDI_CM4F_wc32_ot_hard.a")
+set (MFX_LIB                   ${MEMS_DIR}/Middlewares/ST/STM32_MotionFX_Library/Lib/MotionFX_CM4F_wc32_ot_hard.a)
+set (MAC_LIB                   ${MEMS_DIR}/Middlewares/ST/STM32_MotionAC_Library/Lib/MotionAC_CM4F_wc32_ot_hard.a)
 
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
@@ -114,7 +115,8 @@ set (PROJECT_INCLUDES
 	Sources/app
 	${FREERTOS_DIR}/Source/include
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
-	${MEMS_DIR}/Middlewares/ST/STM32_MotionDI_Library/Inc
+	${MEMS_DIR}/Middlewares/ST/STM32_MotionFX_Library/Inc
+	${MEMS_DIR}/Middlewares/ST/STM32_MotionAC_Library/Inc
 	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh
 	)
 
@@ -129,7 +131,7 @@ enable_language(ASM)
 if (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_EXECUTABLE})
   add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
   add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>)
-  target_link_libraries(${PROJECT_NAME} ${DI_LIB})
+  target_link_libraries(${PROJECT_NAME} ${MFX_LIB})
 elseif (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_STATIC_LIBRARY})
   add_library(${PROJECT_NAME} ${PROJECT_SOURCES})
 endif()

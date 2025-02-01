@@ -1,6 +1,6 @@
 #include "scenarios.h"
 #include <string.h>
-#include "motion_di.h"
+#include "motion_fx.h"
 
 #define FS_NUM_EPOCHS 2
 typedef enum
@@ -13,7 +13,7 @@ typedef enum
 typedef struct
 {
     float time;
-    MDI_output_t imu;
+    MFX_output_t imu;
 
     float a[3];
     float v[3];
@@ -74,7 +74,7 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data)
         struct
         {
             uint64_t time;
-            MDI_output_t meas;
+            MFX_output_t meas;
         } meas;
 
         memcpy((void *)&meas, data, sizeof(meas));

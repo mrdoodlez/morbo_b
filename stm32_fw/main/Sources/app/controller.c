@@ -7,7 +7,7 @@
 #include "imu_reader.h"
 #include "engine_control.h"
 #include "scenarios.h"
-#include "motion_di.h"
+#include "motion_fx.h"
 
 #include <math.h>
 
@@ -44,7 +44,7 @@ typedef struct
     ControllerMessageType_t type;
     union
     {
-        MDI_output_t mdiData;
+        MFX_output_t mdiData;
         HIP_Cmd_t cmd;
     } msgContent;
 
@@ -59,7 +59,7 @@ struct
     QueueHandle_t hQueue;
     uint32_t msgCount;
 
-    MDI_output_t lastMeas;
+    MFX_output_t lastMeas;
 
     uint32_t lastPing;
 
@@ -69,7 +69,7 @@ struct
 
 /******************************************************************************/
 
-static void _Controller_ProcessNewMeas(const MDI_output_t *mdiData);
+static void _Controller_ProcessNewMeas(const MFX_output_t *mdiData);
 static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd);
 
 static void _Controller_HandlePing(const HIP_Ping_t *cmd);
@@ -215,7 +215,7 @@ static void _Controller_Process()
     {
         struct {
             uint64_t time;
-            MDI_output_t meas;
+            MFX_output_t meas;
         } meas;
 
         meas.time = Controller_GetUS();
@@ -256,7 +256,7 @@ void _Sender_Task()
 
 /******************************************************************************/
 
-void Controller_NewMeas(const MDI_output_t *mdiData)
+void Controller_NewMeas(const MFX_output_t *mdiData)
 {
     ControllerMessage_t msg;
     msg.type = ControllerMessageType_Meas;
@@ -282,7 +282,7 @@ void Controller_HandleFatal()
 
 /******************************************************************************/
 
-void _Controller_ProcessNewMeas(const MDI_output_t *mdiData)
+void _Controller_ProcessNewMeas(const MFX_output_t *mdiData)
 {
     g_controllerState.msgCount++;
     g_controllerState.lastMeas = *mdiData;

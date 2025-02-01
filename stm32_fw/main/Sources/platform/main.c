@@ -1,6 +1,7 @@
 #include "main.h"
 #include "serial.h"
 #include "i2c.h"
+#include "spi.h"
 #include "gpio.h"
 #include "adc.h"
 #include "controller.h"
@@ -52,9 +53,11 @@ int main(void)
 
     Serial_Init(0);
 
-    I2C_Init(1);
+    SPI_Init(1);
 
-    GPIO_Init();
+    // I2C_Init(1);
+
+    // GPIO_Init();
 
     // ADC_Init(1);
 

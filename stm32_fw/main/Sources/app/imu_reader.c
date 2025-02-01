@@ -1,5 +1,5 @@
 #include "imu_reader.h"
-#include "i2c.h"
+#include "spi.h"
 #include "motion_di.h"
 #include "controller.h"
 #include "asm330lhh.h"
@@ -25,7 +25,7 @@
 
 struct
 {
-    uint8_t i2c;
+    uint8_t spi;
     char libVersion[35];
     ASM330LHH_Object_t asm330lhh_obj_0;
     ASM330LHH_Axes_t accAxes;
@@ -71,9 +71,11 @@ static void IMU_Process(TimerHandle_t xTimer);
 
 /******************************************************************************/
 
-void IMU_Init(uint8_t i2cDev)
+void IMU_Init(uint8_t spiDev)
 {
-    g_IMU_State.i2c = i2cDev;
+    memset(&g_IMU_State, 0, sizeof(g_IMU_State));
+
+    g_IMU_State.spi = spiDev;
 
     if (ASM330LHH_0_Probe() != 0)
         ; // TODO: handle error
@@ -104,7 +106,6 @@ void IMU_Init(uint8_t i2cDev)
 
 static void IMU_Process(TimerHandle_t xTimer)
 {
-    I2C_Lock(g_IMU_State.i2c);
     /*
     uint8_t val;
     if (I2C_Read(g_IMU_State.i2c, ASM330LHH_I2C_ADD_L, 0x0f, I2C_RegAddrLen_8, &val, 1) != 1)
@@ -144,8 +145,6 @@ static void IMU_Process(TimerHandle_t xTimer)
         float_array_set(g_IMU_State.data_out.gravity, 0, MDI_NUM_AXES);
         float_array_set(g_IMU_State.data_out.linear_acceleration, 0, MDI_NUM_AXES);
     }
-
-    I2C_Unlock(g_IMU_State.i2c);
 }
 
 /**
@@ -196,7 +195,7 @@ int32_t ASM330LHH_0_Probe()
     uint8_t id;
     ASM330LHH_Capabilities_t cap;
 
-    io_ctx.BusType = ASM330LHH_I2C_BUS;
+    io_ctx.BusType = ASM330LHH_SPI_4WIRES_BUS;
     io_ctx.Address = ASM330LHH_I2C_ADD_H;
     io_ctx.Init = DummyFunc;
     io_ctx.DeInit = DummyFunc;
@@ -243,7 +242,8 @@ int32_t ASM330LHH_0_Probe()
 
 int32_t ReadReg(uint16_t devAddr, uint16_t reg, uint8_t *pData, uint16_t length)
 {
-    if (I2C_Read(g_IMU_State.i2c, devAddr, reg, I2C_RegAddrLen_8, pData, length) != 1)
+    uint8_t readAddr = (uint8_t)reg | 0x80;
+    if (SPI_Transaction(g_IMU_State.spi, SPI_Slave_CS0, (SPI_Word_t*)&readAddr, 1, pData, length) != 0)
         ; // TODO: handle error
 
     return 0;
@@ -251,7 +251,11 @@ int32_t ReadReg(uint16_t devAddr, uint16_t reg, uint8_t *pData, uint16_t length)
 
 int32_t WriteReg(uint16_t devAddr, uint16_t reg, uint8_t *pData, uint16_t length)
 {
-    if (I2C_Write(g_IMU_State.i2c, devAddr, reg, I2C_RegAddrLen_8, pData, length) != 1)
+    static uint8_t txBuff[16];
+    txBuff[0] = reg;
+    memcpy(txBuff + 1, pData, length);
+
+    if (SPI_Transaction(g_IMU_State.spi, SPI_Slave_CS0, (SPI_Word_t*)txBuff, length + 1, 0, 0) != 0)
         ; // TODO: handle error
 
     return 0;

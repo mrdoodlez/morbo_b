@@ -151,11 +151,13 @@ void Controller_Task()
         // TODO: handle error
     }
 
+    /*
     rc = EC_Init(EC_BUS);
     if (rc)
     {
         // TODO: handle error
     }
+    */
 
     IMU_Init(IMU_BUS);
 
@@ -190,6 +192,7 @@ static void _Controller_Process()
 
     if ((prevState != g_controllerState.mState) && (g_controllerState.mState == MachineState_Armed))
     {
+        /*
         EC_Enable(0);
 
         for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
@@ -206,6 +209,7 @@ static void _Controller_Process()
             g_controllerState.pwm[en] = 0.1;
             EC_SetThrottle(en, g_controllerState.pwm[en]);
         }
+        */
     }
     else if (g_controllerState.mState == MachineState_Armed)
     {
@@ -227,7 +231,7 @@ static void _Controller_Process()
             for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
             {
                 g_controllerState.pwm[en] = output.pwm[en];
-                EC_SetThrottle(en, g_controllerState.pwm[en]);
+                //EC_SetThrottle(en, g_controllerState.pwm[en]);
             }
         }
         else if (fcRes == FlightScenario_Result_Error)
@@ -273,7 +277,7 @@ void Controller_NewCommand(const HIP_Cmd_t *cmd)
 void Controller_HandleFatal()
 {
     g_controllerState.mState = MachineState_HardFault;
-    EC_Enable(0);
+    // EC_Enable(0);
 }
 
 /******************************************************************************/
@@ -317,11 +321,11 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd)
 {
     if ((cmd->payload.flags & HIP_Throttle_Flags_Enable) == 0)
     {
-        EC_Enable(0);
+        // EC_Enable(0);
     }
     else
     {
-        EC_Enable(1);
+        // EC_Enable(1);
 
         float throttles[4] = {-1, -1, -1, -1};
         if ((cmd->payload.flags & HIP_Throttle_Flags_Eng1) != 0)

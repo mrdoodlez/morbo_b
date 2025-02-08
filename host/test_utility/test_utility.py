@@ -25,6 +25,9 @@ from OpenGL.GLU import *
 import numpy as np
 from stl import mesh
 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
 ################################################################################
 
 class MService(Service):
@@ -132,8 +135,8 @@ LEN_EM = 2 + 2
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
-MSG_IMU = 0x0A00
-MSG_PAT = 0x0A01
+MSG_PAT = 0x0A00
+MSG_ACC = 0x0B00
 
 CRC = 0xCACB
 
@@ -159,6 +162,13 @@ pos_z = 0.0
 pos_roll = 0.0
 pos_pitch = 0.0
 pos_yaw = 0.0
+
+################################################################################
+
+time_window = 100  # Number of points to keep in the plot
+t_data = list(range(-time_window, 0))
+raw_x, raw_y, raw_z = [0] * time_window, [0] * time_window, [0] * time_window
+cal_x, cal_y, cal_z = [0] * time_window, [0] * time_window, [0] * time_window
 
 ################################################################################
 
@@ -223,13 +233,19 @@ def handle_acknak(ack, payload):
     else:
         ackRx = cmd
 
-def handle_imu(payload):
-    global pos_yaw, pos_pitch, pos_roll
-    imu_data = struct.unpack('<9f', b''.join(payload))
-    pos_yaw = imu_data[0]
-    pos_pitch = imu_data[1]
-    pos_roll = imu_data[2]
-    print(pos_roll, pos_pitch, pos_yaw)
+def handle_acc(payload):
+    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
+    acc_data = struct.unpack('<6f', b''.join(payload))
+
+    raw_x.append(acc_data[0])
+    raw_y.append(acc_data[1])
+    raw_z.append(acc_data[2])
+
+    cal_x.append(acc_data[0])
+    cal_y.append(acc_data[1])
+    cal_z.append(acc_data[2])
+
+    print(acc_data)
 
 def handle_pat(payload):
     global pos_yaw, pos_pitch, pos_roll
@@ -251,8 +267,8 @@ def em_command(msgId, msgPeriod, port):
     msgPeriod = int(msgPeriod)
     msgPeriod = int(msgPeriod / 100)
 
-    if msgId == "imu":
-        msgId = MSG_IMU
+    if msgId == "acc":
+        msgId = MSG_ACC
     elif msgId == "pat":
         msgId = MSG_PAT
     else:
@@ -336,6 +352,10 @@ def listener_function(name, port):
         if c == b'':
             continue
 
+        if c is None:
+            state = ProtoState_m
+            continue
+
         if state == ProtoState_b:
             if c == HIP_SYMBOL_B:
                 state = ProtoState_cmd0
@@ -365,7 +385,7 @@ def listener_function(name, port):
 
         elif state == ProtoState_crc0:
             rxCrc = int.from_bytes(c, "little")
-            state = ProtoState_crc1;
+            state = ProtoState_crc1
 
         elif state == ProtoState_crc1:
             rxCrc = rxCrc + int.from_bytes(c, "little") * 256
@@ -377,8 +397,8 @@ def listener_function(name, port):
                     handle_acknak(1, payload)
                 elif cmd == MSG_NAK:
                     handle_acknak(0, payload)
-                elif cmd == MSG_IMU:
-                    handle_imu(payload)
+                elif cmd == MSG_ACC:
+                    handle_acc(payload)
                 elif cmd == MSG_PAT:
                     handle_pat(payload)
 
@@ -449,7 +469,7 @@ def setup_lighting():
     glMaterialfv(GL_FRONT, GL_SPECULAR, [0.5, 0.5, 0.5, 1.0]) # Softer specular reflections
     glMaterialf(GL_FRONT, GL_SHININESS, 10.0)                 # Low shininess for a softer shine
 
-def visio_function(name):
+def visio_flight_function(name):
     pygame.init()
     display = (1024, 768)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
@@ -512,12 +532,79 @@ def visio_function(name):
 
     pygame.quit()
 
+raw_lines = []
+cal_lines = []
+
+fig = None
+
+def update_plot(frame):
+    """Fetches data and updates the plot"""
+    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
+    global doExit
+    global fig
+
+    if doExit:
+        print("Stopping animation...")
+        plt.close(fig)
+        return
+
+    # Keep only the last 'time_window' points
+    raw_x, raw_y, raw_z = raw_x[-time_window:], raw_y[-time_window:], raw_z[-time_window:]
+    cal_x, cal_y, cal_z = cal_x[-time_window:], cal_y[-time_window:], cal_z[-time_window:]
+
+    # Update plots
+    raw_lines[0].set_ydata(raw_x)
+    raw_lines[1].set_ydata(raw_y)
+    raw_lines[2].set_ydata(raw_z)
+    cal_lines[0].set_ydata(cal_x)
+    cal_lines[1].set_ydata(cal_y)
+    cal_lines[2].set_ydata(cal_z)
+
+    return raw_lines + cal_lines
+
+
+def visio_calib_function(name):
+
+    global fig
+
+    # Create figure and axis
+    fig, ax = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
+
+    # Set labels
+    ax[0].set_ylabel("X Acceleration (g)")
+    ax[1].set_ylabel("Y Acceleration (g)")
+    ax[2].set_ylabel("Z Acceleration (g)")
+    ax[2].set_xlabel("Time (arbitrary units)")
+
+    global raw_lines, cal_lines
+    raw_lines = [ax[i].plot(t_data, [0] * time_window, label="Raw", color='red')[0] for i in range(3)]
+    cal_lines = [ax[i].plot(t_data, [0] * time_window, label="Calibrated", color='blue')[0] for i in range(3)]
+
+    for i in range(3):
+        ax[i].set_ylim(-3, 3)  # Fixed scale for better comparison
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set legends
+    for i in range(3):
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set up animation
+    ani = animation.FuncAnimation(fig, update_plot, interval=100, blit=True)
+
+    plt.show()
+
+    pass
+
 ################################################################################
 
 def main():
     print("Hello boss!")
 
     port = BLEPort()
+
+    mode = input("mode? ").split()
 
     #port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.12)
 
@@ -530,9 +617,12 @@ def main():
     console = threading.Thread(target=console_function, args=("console", port.service,))
     console.start()
 
-    visio = threading.Thread(target=visio_function, args=("visio",))
-    visio.start()
+    if mode[0] == "flight":
+        visio = threading.Thread(target=visio_flight_function, args=("visio",))
+    elif mode[0] == "cal":
+        visio = threading.Thread(target=visio_calib_function, args=("visio",))
 
+    visio.start()
 
 if __name__ == '__main__':
     main()

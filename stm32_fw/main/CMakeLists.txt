@@ -67,6 +67,7 @@ set (PROJECT_SOURCES
 	Sources/app/controller.c
 	Sources/app/host_interface.c
 	Sources/app/imu_reader.c
+	Sources/app/mhelpers.c
 	# Sources/app/engine_control.c
 	Sources/app/scenarios.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			
@@ -95,8 +96,8 @@ set (PROJECT_SOURCES
 	${FREERTOS_DIR}/Source/timers.c
 	${FREERTOS_DIR}/Source/queue.c
 	#${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
-	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh.c
-	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh_reg.c
+	${MEMS_DIR}/Drivers/BSP/Components/lsm6dsox/lsm6dsox.c
+	${MEMS_DIR}/Drivers/BSP/Components/lsm6dsox/lsm6dsox_reg.c
 	)
 
 set (PROJECT_DEFINES
@@ -117,7 +118,7 @@ set (PROJECT_INCLUDES
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
 	${MEMS_DIR}/Middlewares/ST/STM32_MotionFX_Library/Inc
 	${MEMS_DIR}/Middlewares/ST/STM32_MotionAC_Library/Inc
-	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh
+	${MEMS_DIR}/Drivers/BSP/Components/lsm6dsox
 	)
 
 ############ MODIFY ACCORDING TO REQUIREMENTS) ########################
@@ -131,7 +132,7 @@ enable_language(ASM)
 if (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_EXECUTABLE})
   add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
   add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>)
-  target_link_libraries(${PROJECT_NAME} ${MFX_LIB})
+  target_link_libraries(${PROJECT_NAME} ${MFX_LIB} ${MAC_LIB})
 elseif (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_STATIC_LIBRARY})
   add_library(${PROJECT_NAME} ${PROJECT_SOURCES})
 endif()

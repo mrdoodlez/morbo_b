@@ -80,7 +80,7 @@ static void _Controller_Process();
 
 static void _Controller_SendMessages();
 
-void _Controller_SendOrientation();
+void _Controller_SendAccAxes();
 void _Controller_SendPAT();
 
 /******************************************************************************/
@@ -93,8 +93,8 @@ struct
     void (*emit)(void);
 } g_msgPool[] =
     {
-        {.msgId = HIP_MSG_IMU, .emit = _Controller_SendOrientation},
         {.msgId = HIP_MSG_PAT, .emit = _Controller_SendPAT},
+        {.msgId = HIP_MSG_ACC, .emit = _Controller_SendAccAxes},
 };
 
 /******************************************************************************/
@@ -160,6 +160,8 @@ void Controller_Task()
     */
 
     IMU_Init(IMU_BUS);
+
+    IMU_SetMode(IMU_Mode_CalAcc);
 
     ControllerMessage_t msg;
 
@@ -377,15 +379,17 @@ void _Controller_SendMessages()
     HostIface_Send();
 }
 
-void _Controller_SendOrientation()
+void _Controller_SendAccAxes()
 {
-    HIP_Payload_IMU_t or;
+    HIP_Payload_Acc_t acc;
+    Vec3D_t raw;
+    Vec3D_t cal;
 
-    memcpy(or.rotation, g_controllerState.lastMeas.rotation, sizeof(or.rotation));
-    memcpy(or.gravity, g_controllerState.lastMeas.gravity, sizeof(or.gravity));
-    memcpy(or.linear_acceleration, g_controllerState.lastMeas.linear_acceleration, sizeof(or.linear_acceleration));
+    IMU_GetAxes(IMU_Sensor_Acc, &raw, &cal);
+    memcpy(&acc.raw, &raw.x, sizeof(acc.raw));
+    memcpy(&acc.cal, &cal.x, sizeof(acc.cal));
 
-    HostIface_PutData(HIP_MSG_IMU, (uint8_t *)& or, sizeof(or));
+    HostIface_PutData(HIP_MSG_ACC, (uint8_t *)&acc, sizeof(acc));
 }
 
 void _Controller_SendPAT()

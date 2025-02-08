@@ -1,6 +1,7 @@
 #include "scenarios.h"
 #include <string.h>
 #include "motion_fx.h"
+#include "mhelpers.h"
 
 #define FS_NUM_EPOCHS 2
 typedef enum
@@ -30,40 +31,6 @@ static struct
     FlightScenario_PAT_t pat;
     uint32_t epochCounter;
 } _copterState;
-
-extern int _dbg;
-
-/******************************************************************************/
-
-typedef struct
-{
-    float x[FS_NUM_AXIS];
-} Vec3D_t;
-
-typedef struct
-{
-    float r[FS_NUM_AXIS][FS_NUM_AXIS];
-} Matrix3D_t;
-
-typedef struct
-{
-    float w;
-    float x;
-    float y;
-    float z;
-} Quaternion_t;
-
-static void FS_QuatToRot(Matrix3D_t *r, Quaternion_t *q);
-static void FS_MatMulVec(Vec3D_t *y, Matrix3D_t *yWx, Vec3D_t *x);
-static void FS_MatTranspose(Matrix3D_t *r);
-
-static void FS_Integate(float *y, float y_, float x, float x_, float h);
-static void FS_Integate3D(Vec3D_t *y, Vec3D_t *y_, Vec3D_t *x, Vec3D_t *x_, float h);
-
-void __dbg_hook(int arg)
-{
-    _dbg = arg;
-}
 
 /******************************************************************************/
 
@@ -131,8 +98,6 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
                 memcpy(_copterState.pat.r, _copterState.measBuff[prevIdx].imu.rotation, sizeof(_copterState.pat.r));
                 _copterState.pat.time = _copterState.measBuff[_copterState.epochIdx].time;
             }
-
-            _dbg = 5007;
         }
     }
 
@@ -147,64 +112,4 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
 void FlightScenario_GetPAT(FlightScenario_PAT_t *pat)
 {
     memcpy(pat, &_copterState.pat, sizeof(FlightScenario_PAT_t));
-}
-
-/******************************************************************************/
-
-static void FS_Integate3D(Vec3D_t *y, Vec3D_t *y_, Vec3D_t *x, Vec3D_t *x_, float h)
-{
-    _dbg = 5009;
-
-    for (int i = 0; i < FS_NUM_AXIS; i++)
-    {
-        FS_Integate(&y->x[i], y_->x[i], x->x[i], x_->x[i], h);
-    }
-}
-
-static void FS_Integate(float *y, float y_, float x, float x_, float h)
-{
-    *y = y_ + (x + x_) * h / 2.0;
-
-    _dbg = 5008;
-}
-
-// Quternion to World-to-Body
-static void FS_QuatToRot(Matrix3D_t *r, Quaternion_t *q)
-{
-    r->r[0][0] = 1 - 2 * (q->y * q->y + q->z * q->z);
-    r->r[0][1] = 2 * (q->x * q->y + q->w * q->z);
-    r->r[0][2] = 2 * (q->x * q->z - q->w * q->y);
-
-    r->r[1][0] = 2 * (q->x * q->y - q->w * q->z);
-    r->r[1][1] = 1 - 2 * (q->x * q->x + q->z * q->z);
-    r->r[1][2] = 2 * (q->y * q->z + q->w * q->x);
-
-    r->r[2][0] = 2 * (q->x * q->z + q->w * q->y);
-    r->r[2][1] = 2 * (q->y * q->z - q->w * q->x);
-    r->r[2][2] = 1 - 2 * (q->x * q->x + q->y * q->y);
-}
-
-static void FS_MatTranspose(Matrix3D_t *r)
-{
-    for (int i = 0; i < FS_NUM_AXIS; i++)
-    {
-        for (int j = i + 1; j < FS_NUM_AXIS; j++)
-        {
-            float temp = r->r[i][j];
-            r->r[i][j] = r->r[j][i];
-            r->r[j][i] = temp;
-        }
-    }
-}
-
-static void FS_MatMulVec(Vec3D_t *y, Matrix3D_t *yWx, Vec3D_t *x)
-{
-    for (int i = 0; i < FS_NUM_AXIS; i++)
-    {
-        y->x[i] = 0;
-        for (int j = 0; j < FS_NUM_AXIS; j++)
-        {
-            y->x[i] += yWx->r[i][j] * x->x[j];
-        }
-    }
 }

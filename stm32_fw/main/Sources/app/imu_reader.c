@@ -3,7 +3,7 @@
 #include "motion_fx.h"
 #include "motion_ac.h"
 #include "controller.h"
-#include "asm330lhh.h"
+#include "lsm6dsox.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
@@ -11,7 +11,10 @@
 #define ALGO_FREQ 250
 #define ALGO_PERIOD_MS (1000 / ALGO_FREQ)
 #define ACC_ODR ((float)ALGO_FREQ)
-#define ACC_FS 2 /* FS = <-2g, 2g> */
+#define ACC_FS 4 /* FS = <-4g, 4g> */
+/* MOVE_THR_G recommended between 0.15 - 0.30 g, higher value will relax condition on data selection for calibration but
+   reduce the accuracy which will be around (moveThresh_g / 10) */
+#define MOVE_THR_G 0.2f
 
 #define SAMPLETODISCARD 15
 #define DECIMATION 1U
@@ -28,36 +31,54 @@
 #define GBIAS_GYRO_TH_SC (2.0f * 0.002f)
 #define GBIAS_MAG_TH_SC (2.0f * 0.001500f)
 
-static const uint32_t ReportInterval = 1000U / ALGO_FREQ;
-static volatile uint32_t TimeStamp = 0;
-static MAC_knobs_t Knobs;
+#define IMU_NUM_SENSORS (IMU_Sensor_Mag + 1)
 
-typedef struct imu_reader
+static const uint32_t ReportInterval = 1000U / ALGO_FREQ;
+
+typedef enum
 {
-    int32_t x;
-    int32_t y;
-    int32_t z;
-} MOTION_SENSOR_Axes_t;
+    DYNAMIC_CALIBRATION = 0,
+    SIX_POINT_CALIBRATION = 1
+} MAC_calibration_mode_t;
+
+typedef enum
+{
+    MAC_DISABLE_LIB = 0,
+    MAC_ENABLE_LIB = 1
+} MAC_enable_lib_t;
 
 struct
 {
     uint8_t spi;
-    char libVersion[35];
-    ASM330LHH_Object_t asm330lhh_obj_0;
-    ASM330LHH_Axes_t accAxes;
-    ASM330LHH_Axes_t gyrAxes;
-    MOTION_SENSOR_Axes_t magAxes;
-    MFX_input_t data_in;
-    MFX_output_t data_out;
-    int64_t lastTimestamp;
-    int discardedCount;
 
-    MOTION_SENSOR_Axes_t magOffset;
-    uint8_t magCalStatus;
+    char fxLibVersion[35];
+    char acLibVersion[35];
+
+    LSM6DSOX_Object_t lsm6dsox_obj_0;
+
+    struct
+    {
+        Vec3D_t axesRaw;
+        Vec3D_t axesCal;
+        IMU_CalData_t cal;
+        int calStatus;
+    } sensorData[IMU_NUM_SENSORS];
+
+    MFX_input_t fxDataIn;
+    MFX_output_t fxDataOut;
+
+    MAC_input_t macDataIn;
+    MAC_output_t macDataOut;
+
+    int64_t lastTimestamp;
+
+    IMU_Mode_t workMode;
 } g_IMU_State;
 
 static MFX_knobs_t iKnobs;
 static MFX_knobs_t *ipKnobs = &iKnobs;
+
+static MAC_knobs_t Knobs;
 
 #define MFX_STATE_SIZE (size_t)(2432)
 static uint8_t mfxstate[MFX_STATE_SIZE];
@@ -67,19 +88,26 @@ static StaticTimer_t imuTmrBuffer;
 
 /******************************************************************************/
 
+extern int _dbg;
+
+void __dbg_hook(int arg)
+{
+    _dbg = arg;
+}
+
+/******************************************************************************/
+
 static void MotionFX_manager_init();
 
 static void MotionFX_manager_get_version(char *version, int *length);
 
 static void MotionFX_manager_run(MFX_input_t *data_in, MFX_output_t *data_out, float delta_time);
 
-// static void MotionFX_manager_MagCal_run(MFX_MagCal_input_t *data_in, MFX_MagCal_output_t *data_out);
+static void MotionAC_manager_get_version(char *version, int *length);
 
-static void MotionFX_manager_MagCal_start(int sampletime);
+/******************************************************************************/
 
-// static void MotionFX_manager_MagCal_stop(int sampletime);
-
-static int32_t ASM330LHH_0_Probe();
+static int32_t LSM6DSOX_0_Probe();
 
 static int32_t ReadReg(uint16_t devAddr, uint16_t reg, uint8_t *pData, uint16_t length);
 
@@ -91,11 +119,11 @@ static void Delay(uint32_t ms);
 
 static int32_t DummyFunc() { return 0; }
 
-static void float_array_set(float array[], float value, uint32_t count);
-
 /******************************************************************************/
 
 static void IMU_Process(TimerHandle_t xTimer);
+
+static void IMU_GetSamples(IMU_Sensor_t s);
 
 /******************************************************************************/
 
@@ -105,13 +133,13 @@ void IMU_Init(uint8_t spiDev)
 
     g_IMU_State.spi = spiDev;
 
-    if (ASM330LHH_0_Probe() != 0)
+    if (LSM6DSOX_0_Probe() != 0)
         ; // TODO: handle error
 
-    if (ASM330LHH_ACC_SetOutputDataRate(&g_IMU_State.asm330lhh_obj_0, ACC_ODR) != ASM330LHH_OK)
+    if (LSM6DSOX_ACC_SetOutputDataRate(&g_IMU_State.lsm6dsox_obj_0, ACC_ODR) != LSM6DSOX_OK)
         ; // TODO: handle error
 
-    if (ASM330LHH_ACC_SetFullScale(&g_IMU_State.asm330lhh_obj_0, ACC_FS) != ASM330LHH_OK)
+    if (LSM6DSOX_ACC_SetFullScale(&g_IMU_State.lsm6dsox_obj_0, ACC_FS) != LSM6DSOX_OK)
         ; // TODO: handle error
 
     /* DynamicInclinometer API initialization function */
@@ -119,43 +147,23 @@ void IMU_Init(uint8_t spiDev)
 
     /* Get library version */
     int libVersionLen;
-    MotionFX_manager_get_version(g_IMU_State.libVersion, &libVersionLen);
-
-    /* Enable magnetometer calibration */
-    MotionFX_manager_MagCal_start(ALGO_PERIOD_MS);
-
-    /* Test if calibration data are available */
-    MFX_MagCal_output_t mag_cal_test;
-    MotionFX_MagCal_getParams(&mag_cal_test);
-
-    /* If calibration data are available load HI coefficients */
-    if (mag_cal_test.cal_quality == MFX_MAGCALGOOD)
-    {
-        float ans_float;
-        ans_float = (mag_cal_test.hi_bias[0] * FROM_UT50_TO_MGAUSS);
-        g_IMU_State.magOffset.x = (int32_t)ans_float;
-        ans_float = (mag_cal_test.hi_bias[1] * FROM_UT50_TO_MGAUSS);
-        g_IMU_State.magOffset.y = (int32_t)ans_float;
-        ans_float = (mag_cal_test.hi_bias[2] * FROM_UT50_TO_MGAUSS);
-        g_IMU_State.magOffset.z = (int32_t)ans_float;
-
-        g_IMU_State.magCalStatus = 1;
-    }
+    MotionFX_manager_get_version(g_IMU_State.fxLibVersion, &libVersionLen);
 
     MotionFX_enable_6X(mfxstate, MFX_ENGINE_ENABLE);
 
-    MotionAC_Initialize((uint8_t)enable);
+    /* AccelerometerCalibration API initialization function */
+    MotionAC_Initialize(MAC_ENABLE_LIB);
 
     /* Get current settings and set desired ones */
     MotionAC_GetKnobs(&Knobs);
     Knobs.MoveThresh_g = MOVE_THR_G;
-    Knobs.Run6PointCal = (uint8_t)CalibrationMode;
+    Knobs.Run6PointCal = DYNAMIC_CALIBRATION;
     Knobs.Sample_ms = ReportInterval;
     (void)MotionAC_SetKnobs(&Knobs);
 
     /* OPTIONAL */
     /* Get library version */
-    MotionAC_manager_get_version(LibVersion, &LibVersionLen);
+    MotionAC_manager_get_version(g_IMU_State.acLibVersion, &libVersionLen);
 
     if ((imuTimer = xTimerCreateStatic("IMU", pdMS_TO_TICKS(ALGO_PERIOD_MS),
                                        pdTRUE, (void *)0, IMU_Process, &imuTmrBuffer)) == NULL)
@@ -165,54 +173,114 @@ void IMU_Init(uint8_t spiDev)
         ; // TODO: handle error
 }
 
+int IMU_SetMode(IMU_Mode_t workmode)
+{
+    g_IMU_State.workMode = workmode;
+
+    return 0;
+}
+
+int IMU_GetAxes(IMU_Sensor_t s, Vec3D_t *raw, Vec3D_t *cal)
+{
+    *raw = g_IMU_State.sensorData[s].axesRaw;
+    *cal = g_IMU_State.sensorData[s].axesCal;
+    return 0;
+}
+
+int IMU_SetCalData(IMU_Sensor_t s, IMU_CalData_t *cd)
+{
+    return 0;
+}
+
+int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd)
+{
+    return 0;
+}
+
 /******************************************************************************/
 
 static void IMU_Process(TimerHandle_t xTimer)
 {
-    /*
-    uint8_t val;
-    if (I2C_Read(g_IMU_State.i2c, ASM330LHH_I2C_ADD_L, 0x0f, I2C_RegAddrLen_8, &val, 1) != 1)
-            ; // TODO: handle error
-    */
-
-    if (ASM330LHH_ACC_GetAxes(&g_IMU_State.asm330lhh_obj_0, &g_IMU_State.accAxes) != ASM330LHH_OK)
-        ; // TODO: handle error
-
-    if (ASM330LHH_GYRO_GetAxes(&g_IMU_State.asm330lhh_obj_0, &g_IMU_State.gyrAxes) != ASM330LHH_OK)
-        ; // TODO: handle error
-
-    /* Convert acceleration from [mg] to [g] */
-    g_IMU_State.data_in.acc[0] = (float)g_IMU_State.accAxes.x * FROM_MG_TO_G;
-    g_IMU_State.data_in.acc[1] = (float)g_IMU_State.accAxes.y * FROM_MG_TO_G;
-    g_IMU_State.data_in.acc[2] = (float)g_IMU_State.accAxes.z * FROM_MG_TO_G;
-
-    /* Convert angular velocity from [mdps] to [dps] */
-    g_IMU_State.data_in.gyro[0] = (float)g_IMU_State.gyrAxes.x * FROM_MDPS_TO_DPS;
-    g_IMU_State.data_in.gyro[1] = (float)g_IMU_State.gyrAxes.y * FROM_MDPS_TO_DPS;
-    g_IMU_State.data_in.gyro[2] = (float)g_IMU_State.gyrAxes.z * FROM_MDPS_TO_DPS;
-
-    /* Convert magnetic field intensity from [mGauss] to [uT / 50] */
-    g_IMU_State.data_in.mag[0] = (float)g_IMU_State.magAxes.x * FROM_MGAUSS_TO_UT50;
-    g_IMU_State.data_in.mag[1] = (float)g_IMU_State.magAxes.y * FROM_MGAUSS_TO_UT50;
-    g_IMU_State.data_in.mag[2] = (float)g_IMU_State.magAxes.z * FROM_MGAUSS_TO_UT50;
+    for (int s = 0; s < IMU_NUM_SENSORS; s++)
+        IMU_GetSamples((IMU_Sensor_t)s);
 
     uint64_t timestampUs = GetTick() * 1000;
     float delataTime = (timestampUs - g_IMU_State.lastTimestamp) * 1.0e-6;
+
+    if (g_IMU_State.workMode == IMU_Mode_CalAcc)
+    {
+        memcpy(&g_IMU_State.macDataIn.Acc,
+               g_IMU_State.sensorData[IMU_Sensor_Acc].axesCal.x, sizeof(g_IMU_State.macDataIn.Acc));
+        g_IMU_State.macDataIn.TimeStamp = (int)(timestampUs / 1000);
+
+        uint8_t isCalibrated;
+        MotionAC_Update(&g_IMU_State.macDataIn, &isCalibrated);
+
+        MotionAC_GetCalParams(&g_IMU_State.macDataOut);
+
+        for (int i = 0; i < FS_NUM_AXIS; i++)
+        {
+            g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[i] = g_IMU_State.macDataOut.AccBias[i];
+            g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[i][i] = g_IMU_State.macDataOut.SF_Matrix[i][i];
+            g_IMU_State.sensorData[IMU_Sensor_Acc].calStatus = 1;
+        }
+    }
+    else if (g_IMU_State.workMode == IMU_Mode_CalGyro)
+    {
+    }
+    else if (g_IMU_State.workMode == IMU_Mode_Fusion)
+    {
+        memcpy(&g_IMU_State.fxDataIn.acc,
+               g_IMU_State.sensorData[IMU_Sensor_Acc].axesCal.x, sizeof(g_IMU_State.fxDataIn.acc));
+        memcpy(&g_IMU_State.fxDataIn.gyro,
+               g_IMU_State.sensorData[IMU_Sensor_Gyro].axesCal.x, sizeof(g_IMU_State.fxDataIn.gyro));
+
+        MotionFX_manager_run(&g_IMU_State.fxDataIn, &g_IMU_State.fxDataOut, delataTime);
+        Controller_NewMeas(&g_IMU_State.fxDataOut);
+    }
+
     g_IMU_State.lastTimestamp = timestampUs;
 
-    if (g_IMU_State.discardedCount == SAMPLETODISCARD)
-    {
-        MotionFX_manager_run(&g_IMU_State.data_in, &g_IMU_State.data_out, delataTime);
+    if (timestampUs > 5e6)
+        __dbg_hook((int)timestampUs);
+}
 
-        Controller_NewMeas(&g_IMU_State.data_out);
+static void IMU_GetSamples(IMU_Sensor_t s)
+{
+    LSM6DSOX_Axes_t axes;
+    if (s == IMU_Sensor_Acc)
+    {
+        if (LSM6DSOX_ACC_GetAxes(&g_IMU_State.lsm6dsox_obj_0, &axes) != LSM6DSOX_OK)
+            ; // TODO: handle error
+
+        g_IMU_State.sensorData[s].axesRaw.x[0] = (float)axes.x * FROM_MG_TO_G;
+        g_IMU_State.sensorData[s].axesRaw.x[1] = (float)axes.y * FROM_MG_TO_G;
+        g_IMU_State.sensorData[s].axesRaw.x[2] = (float)axes.z * FROM_MG_TO_G;
+    }
+    else if (s == IMU_Sensor_Gyro)
+    {
+        if (LSM6DSOX_GYRO_GetAxes(&g_IMU_State.lsm6dsox_obj_0, &axes) != LSM6DSOX_OK)
+            ; // TODO: handle error
+
+        g_IMU_State.sensorData[s].axesRaw.x[0] = (float)axes.x * FROM_MDPS_TO_DPS;
+        g_IMU_State.sensorData[s].axesRaw.x[1] = (float)axes.y * FROM_MDPS_TO_DPS;
+        g_IMU_State.sensorData[s].axesRaw.x[2] = (float)axes.z * FROM_MDPS_TO_DPS;
+    }
+    else
+        return;
+
+    if (g_IMU_State.sensorData[s].calStatus == 1)
+    {
+        for (int i = 0; i < FS_NUM_AXIS; i++)
+        {
+            g_IMU_State.sensorData[s].axesCal.x[i] = g_IMU_State.sensorData[s].axesRaw.x[i]
+                - g_IMU_State.sensorData[s].cal.ofsset.x[i];
+            g_IMU_State.sensorData[s].axesCal.x[i] *= g_IMU_State.sensorData[s].cal.scale.r[i][i];
+        }
     }
     else
     {
-        g_IMU_State.discardedCount++;
-        float_array_set(g_IMU_State.data_out.quaternion, 0, MFX_QNUM_AXES);
-        float_array_set(g_IMU_State.data_out.rotation, 0, MFX_NUM_AXES);
-        float_array_set(g_IMU_State.data_out.gravity, 0, MFX_NUM_AXES);
-        float_array_set(g_IMU_State.data_out.linear_acceleration, 0, MFX_NUM_AXES);
+        g_IMU_State.sensorData[s].axesCal = g_IMU_State.sensorData[s].axesRaw;
     }
 }
 
@@ -280,46 +348,48 @@ void MotionFX_manager_get_version(char *version, int *length)
 }
 
 /**
- * @brief  Run magnetometer calibration algorithm
- * @param  None
- * @retval None
+ * @brief  Get the library version
+ * @param  version  Library version string (must be array of 35 char)
+ * @param  length  Library version string length
+ * @retval none
  */
-void MotionFX_manager_MagCal_run(MFX_MagCal_input_t *data_in, MFX_MagCal_output_t *data_out)
+void MotionAC_manager_get_version(char *version, int *length)
 {
-    MotionFX_MagCal_run(data_in);
-    MotionFX_MagCal_getParams(data_out);
+    *length = (int)MotionAC_GetLibVersion(version);
 }
 
 /**
- * @brief  Start magnetometer calibration
- * @param  None
- * @retval None
+ * @brief  Save the calibration parameters in storage
+ * @param  data_size  size of data
+ * @param  data  pointer of data
+ * @retval Will return 0 the if it is success and 1 if it is failure
  */
-void MotionFX_manager_MagCal_start(int sampletime)
+char MotionAC_SaveCalInNVM(unsigned short int data_size, unsigned int *data)
 {
-    MotionFX_MagCal_init(sampletime, 1);
+    return (char)1; /* FAILURE: Write to NVM not implemented. */
 }
 
 /**
- * @brief  Stop magnetometer calibration
- * @param  None
- * @retval None
+ * @brief  Load the calibration parameters from storage
+ * @param  data_size  size of data
+ * @param  data  pointer of data
+ * @retval Will return 0 the if it is success and 1 if it is failure
  */
-void MotionFX_manager_MagCal_stop(int sampletime)
+char MotionAC_LoadCalFromNVM(unsigned short int data_size, unsigned int *data)
 {
-    MotionFX_MagCal_init(sampletime, 0);
+    return (char)1; /* FAILURE: Read from NVM not implemented. */
 }
 
 /*******************************************************************************/
 
-int32_t ASM330LHH_0_Probe()
+int32_t LSM6DSOX_0_Probe()
 {
-    ASM330LHH_IO_t io_ctx;
+    LSM6DSOX_IO_t io_ctx;
     uint8_t id;
-    ASM330LHH_Capabilities_t cap;
+    LSM6DSOX_Capabilities_t cap;
 
-    io_ctx.BusType = ASM330LHH_SPI_4WIRES_BUS;
-    io_ctx.Address = ASM330LHH_I2C_ADD_H;
+    io_ctx.BusType = LSM6DSOX_SPI_4WIRES_BUS;
+    io_ctx.Address = LSM6DSOX_I2C_ADD_H;
     io_ctx.Init = DummyFunc;
     io_ctx.DeInit = DummyFunc;
     io_ctx.ReadReg = ReadReg;
@@ -327,35 +397,35 @@ int32_t ASM330LHH_0_Probe()
     io_ctx.GetTick = GetTick;
     io_ctx.Delay = Delay;
 
-    if (ASM330LHH_RegisterBusIO(&g_IMU_State.asm330lhh_obj_0, &io_ctx) != ASM330LHH_OK)
+    if (LSM6DSOX_RegisterBusIO(&g_IMU_State.lsm6dsox_obj_0, &io_ctx) != LSM6DSOX_OK)
     {
         return -10;
     }
 
-    if (ASM330LHH_ReadID(&g_IMU_State.asm330lhh_obj_0, &id) != ASM330LHH_OK)
+    if (LSM6DSOX_ReadID(&g_IMU_State.lsm6dsox_obj_0, &id) != LSM6DSOX_OK)
     {
         return -20;
     }
 
-    if (id != ASM330LHH_ID)
+    if (id != LSM6DSOX_ID)
     {
         return -30;
     }
 
-    ASM330LHH_GetCapabilities(&g_IMU_State.asm330lhh_obj_0, &cap);
+    LSM6DSOX_GetCapabilities(&g_IMU_State.lsm6dsox_obj_0, &cap);
     // TODO: chack cap ?
 
-    if (ASM330LHH_Init(&g_IMU_State.asm330lhh_obj_0) != ASM330LHH_OK)
+    if (LSM6DSOX_Init(&g_IMU_State.lsm6dsox_obj_0) != LSM6DSOX_OK)
     {
         return -40;
     }
 
-    if (ASM330LHH_ACC_Enable(&g_IMU_State.asm330lhh_obj_0) != ASM330LHH_OK)
+    if (LSM6DSOX_ACC_Enable(&g_IMU_State.lsm6dsox_obj_0) != LSM6DSOX_OK)
     {
         return -50;
     }
 
-    if (ASM330LHH_GYRO_Enable(&g_IMU_State.asm330lhh_obj_0) != ASM330LHH_OK)
+    if (LSM6DSOX_GYRO_Enable(&g_IMU_State.lsm6dsox_obj_0) != LSM6DSOX_OK)
     {
         return -60;
     }
@@ -392,19 +462,4 @@ int32_t GetTick()
 void Delay(uint32_t ms)
 {
     vTaskDelay(ms);
-}
-
-/**
- * @brief  Set float array items to value
- * @param  array Destination float array
- * @param  value Set to this value
- * @param  count Number of items to be set
- * @retval None
- */
-void float_array_set(float array[], float value, uint32_t count)
-{
-    for (uint32_t i = 0; i < count; i++)
-    {
-        array[i] = value;
-    }
 }

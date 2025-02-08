@@ -2,14 +2,12 @@
 #define _SCENARIOS_H_
 
 #include "main.h"
+#include "mhelpers.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-#define FS_NUM_AXIS 3
-
     typedef enum
     {
         FlightScenario_None,

@@ -27,7 +27,10 @@ extern "C"
 #define HIP_MSG_PAT 0x0A00
 
 #define HIP_MSG_ACC 0x0B00
-#define HIP_MSG_GYRO 0x0B01
+#define HIP_MSG_CAL_ACC 0x0B01
+
+#define HIP_MSG_GYRO 0x0B02
+#define HIP_MSG_CAL_GYRO 0x0B03
 
     /******************************************************************************/
 
@@ -75,6 +78,20 @@ extern "C"
         HIP_Payload_Acc_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_Acc_t;
+
+    typedef struct
+    {
+        float scale[3 * 3];
+        float bias[3];
+        uint8_t flags; // for future use
+    } __attribute__((packed)) HIP_Payload_Cal_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_Cal_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_Cal_t;
 
     typedef struct
     {

@@ -137,6 +137,7 @@ MSG_NAK = 0x0101
 
 MSG_PAT = 0x0A00
 MSG_ACC = 0x0B00
+MSG_CAL_ACC = 0x0B01
 
 CRC = 0xCACB
 
@@ -169,6 +170,11 @@ time_window = 100  # Number of points to keep in the plot
 t_data = list(range(-time_window, 0))
 raw_x, raw_y, raw_z = [0] * time_window, [0] * time_window, [0] * time_window
 cal_x, cal_y, cal_z = [0] * time_window, [0] * time_window, [0] * time_window
+
+################################################################################
+
+acc_scale = [0] * (3 * 3)
+acc_bias = [0] * 3
 
 ################################################################################
 
@@ -241,11 +247,18 @@ def handle_acc(payload):
     raw_y.append(acc_data[1])
     raw_z.append(acc_data[2])
 
-    cal_x.append(acc_data[0])
-    cal_y.append(acc_data[1])
-    cal_z.append(acc_data[2])
+    cal_x.append(acc_data[3])
+    cal_y.append(acc_data[4])
+    cal_z.append(acc_data[5])
 
     print(acc_data)
+
+def handle_cal_acc(payload):
+    global acc_scale, acc_bias
+    cal_data = struct.unpack('<12fB', b''.join(payload))
+
+    print('[', cal_data[0], cal_data[4], cal_data[8], '] ', \
+        ' [', cal_data[9], cal_data[10], cal_data[11], ']')
 
 def handle_pat(payload):
     global pos_yaw, pos_pitch, pos_roll
@@ -269,6 +282,8 @@ def em_command(msgId, msgPeriod, port):
 
     if msgId == "acc":
         msgId = MSG_ACC
+    elif msgId == "ac":
+        msgId = MSG_CAL_ACC
     elif msgId == "pat":
         msgId = MSG_PAT
     else:
@@ -399,6 +414,8 @@ def listener_function(name, port):
                     handle_acknak(0, payload)
                 elif cmd == MSG_ACC:
                     handle_acc(payload)
+                elif cmd == MSG_CAL_ACC:
+                    handle_cal_acc(payload)
                 elif cmd == MSG_PAT:
                     handle_pat(payload)
 
@@ -581,7 +598,7 @@ def visio_calib_function(name):
     cal_lines = [ax[i].plot(t_data, [0] * time_window, label="Calibrated", color='blue')[0] for i in range(3)]
 
     for i in range(3):
-        ax[i].set_ylim(-3, 3)  # Fixed scale for better comparison
+        ax[i].set_ylim(-1.5, 1.5)  # Fixed scale for better comparison
         ax[i].legend(loc="upper right")
         ax[i].grid(True)
 

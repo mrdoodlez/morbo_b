@@ -37,7 +37,7 @@ extern "C"
 
     int IMU_SetCalData(IMU_Sensor_t s, IMU_CalData_t *cd);
 
-    int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd);
+    int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd, uint8_t *status);
 
     int IMU_GetAxes(IMU_Sensor_t s, Vec3D_t *raw, Vec3D_t *cal);
 

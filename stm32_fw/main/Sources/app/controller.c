@@ -81,6 +81,8 @@ static void _Controller_Process();
 static void _Controller_SendMessages();
 
 void _Controller_SendAccAxes();
+void _Controller_SendAccCal();
+
 void _Controller_SendPAT();
 
 /******************************************************************************/
@@ -95,6 +97,7 @@ struct
     {
         {.msgId = HIP_MSG_PAT, .emit = _Controller_SendPAT},
         {.msgId = HIP_MSG_ACC, .emit = _Controller_SendAccAxes},
+        {.msgId = HIP_MSG_CAL_ACC, .emit = _Controller_SendAccCal},
 };
 
 /******************************************************************************/
@@ -390,6 +393,21 @@ void _Controller_SendAccAxes()
     memcpy(&acc.cal, &cal.x, sizeof(acc.cal));
 
     HostIface_PutData(HIP_MSG_ACC, (uint8_t *)&acc, sizeof(acc));
+}
+
+void _Controller_SendAccCal()
+{
+
+    IMU_CalData_t imu;
+    uint8_t calStatus;
+    IMU_GetCalData(IMU_Sensor_Acc, &imu, &calStatus);
+
+    HIP_Payload_Cal_t cal;
+    memcpy(&cal.scale, &imu.scale.r, sizeof(cal.scale));
+    memcpy(&cal.bias, &imu.ofsset.x, sizeof(cal.bias));
+    cal.flags = calStatus;
+
+    HostIface_PutData(HIP_MSG_CAL_ACC, (uint8_t *)&cal, sizeof(cal));
 }
 
 void _Controller_SendPAT()

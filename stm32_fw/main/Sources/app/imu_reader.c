@@ -8,18 +8,29 @@
 #include "task.h"
 #include "timers.h"
 
-#define ALGO_FREQ 250
-#define ALGO_PERIOD_MS (1000 / ALGO_FREQ)
-#define ACC_ODR ((float)ALGO_FREQ)
-#define ACC_FS 4 /* FS = <-4g, 4g> */
+/*
+
+TODO: use one of thos calib matrices
+
+[ 0.9995399713516235 1.0000852346420288 0.9995347857475281 ]   [ -0.003000000026077032 -0.005000000353902578 0.018000001087784767 ]
+[ 0.9987210035324097 1.0028388500213623 1.0009286403656006 ]   [ -0.003000000026077032 -0.0010000000474974513 0.018000001087784767 ] 
+[ 0.9988633990287781 1.0005004405975342 0.9993361830711365 ]   [ -0.003000000026077032 -0.003000000026077032 0.01900000125169754 ] 
+
+*/
+
+#define FUSION_FREQ 250
+#define CALIB_FREQ 50
+
+#define SAMPLE_RATIO (FUSION_FREQ / CALIB_FREQ)
+
+#define TIMER_FREQ FUSUIN_FREQ
+#define TIMER_PERIOD (1000 / FUSION_FREQ)
+
 /* MOVE_THR_G recommended between 0.15 - 0.30 g, higher value will relax condition on data selection for calibration but
    reduce the accuracy which will be around (moveThresh_g / 10) */
-#define MOVE_THR_G 0.2f
+#define MOVE_THR_G 0.15f
+#define ACC_FS 4 /* FS = <-4g, 4g> */
 
-#define SAMPLETODISCARD 15
-#define DECIMATION 1U
-
-#define ALGO_PERIOD_US (1000000U / ALGO_FREQ) /* Algorithm period [us] */
 #define FROM_MG_TO_G 0.001f
 #define FROM_G_TO_MG 1000.0f
 #define FROM_MDPS_TO_DPS 0.001f
@@ -33,7 +44,7 @@
 
 #define IMU_NUM_SENSORS (IMU_Sensor_Mag + 1)
 
-static const uint32_t ReportInterval = 1000U / ALGO_FREQ;
+static const uint32_t calibInterval = (1000U / CALIB_FREQ);
 
 typedef enum
 {
@@ -69,6 +80,7 @@ struct
 
     MAC_input_t macDataIn;
     MAC_output_t macDataOut;
+    uint32_t calibCounter;
 
     int64_t lastTimestamp;
 
@@ -136,7 +148,7 @@ void IMU_Init(uint8_t spiDev)
     if (LSM6DSOX_0_Probe() != 0)
         ; // TODO: handle error
 
-    if (LSM6DSOX_ACC_SetOutputDataRate(&g_IMU_State.lsm6dsox_obj_0, ACC_ODR) != LSM6DSOX_OK)
+    if (LSM6DSOX_ACC_SetOutputDataRate(&g_IMU_State.lsm6dsox_obj_0, (float)FUSION_FREQ) != LSM6DSOX_OK)
         ; // TODO: handle error
 
     if (LSM6DSOX_ACC_SetFullScale(&g_IMU_State.lsm6dsox_obj_0, ACC_FS) != LSM6DSOX_OK)
@@ -158,14 +170,14 @@ void IMU_Init(uint8_t spiDev)
     MotionAC_GetKnobs(&Knobs);
     Knobs.MoveThresh_g = MOVE_THR_G;
     Knobs.Run6PointCal = DYNAMIC_CALIBRATION;
-    Knobs.Sample_ms = ReportInterval;
+    Knobs.Sample_ms = calibInterval;
     (void)MotionAC_SetKnobs(&Knobs);
 
     /* OPTIONAL */
     /* Get library version */
     MotionAC_manager_get_version(g_IMU_State.acLibVersion, &libVersionLen);
 
-    if ((imuTimer = xTimerCreateStatic("IMU", pdMS_TO_TICKS(ALGO_PERIOD_MS),
+    if ((imuTimer = xTimerCreateStatic("IMU", pdMS_TO_TICKS(TIMER_PERIOD),
                                        pdTRUE, (void *)0, IMU_Process, &imuTmrBuffer)) == NULL)
         ; // TODO: handle error
 
@@ -192,8 +204,10 @@ int IMU_SetCalData(IMU_Sensor_t s, IMU_CalData_t *cd)
     return 0;
 }
 
-int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd)
+int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd, uint8_t *status)
 {
+    *cd = g_IMU_State.sensorData[s].cal;
+    *status = g_IMU_State.sensorData[s].calStatus;
     return 0;
 }
 
@@ -207,7 +221,8 @@ static void IMU_Process(TimerHandle_t xTimer)
     uint64_t timestampUs = GetTick() * 1000;
     float delataTime = (timestampUs - g_IMU_State.lastTimestamp) * 1.0e-6;
 
-    if (g_IMU_State.workMode == IMU_Mode_CalAcc)
+    if ((g_IMU_State.workMode == IMU_Mode_CalAcc)
+        && (g_IMU_State.calibCounter % SAMPLE_RATIO == 0))
     {
         memcpy(&g_IMU_State.macDataIn.Acc,
                g_IMU_State.sensorData[IMU_Sensor_Acc].axesCal.x, sizeof(g_IMU_State.macDataIn.Acc));
@@ -215,13 +230,16 @@ static void IMU_Process(TimerHandle_t xTimer)
 
         uint8_t isCalibrated;
         MotionAC_Update(&g_IMU_State.macDataIn, &isCalibrated);
-
         MotionAC_GetCalParams(&g_IMU_State.macDataOut);
 
-        for (int i = 0; i < FS_NUM_AXIS; i++)
+        if (isCalibrated)
         {
-            g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[i] = g_IMU_State.macDataOut.AccBias[i];
-            g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[i][i] = g_IMU_State.macDataOut.SF_Matrix[i][i];
+            for (int i = 0; i < FS_NUM_AXIS; i++)
+            {
+                g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[i] = g_IMU_State.macDataOut.AccBias[i];
+                g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[i][i] = g_IMU_State.macDataOut.SF_Matrix[i][i];
+            }
+
             g_IMU_State.sensorData[IMU_Sensor_Acc].calStatus = 1;
         }
     }
@@ -240,9 +258,7 @@ static void IMU_Process(TimerHandle_t xTimer)
     }
 
     g_IMU_State.lastTimestamp = timestampUs;
-
-    if (timestampUs > 5e6)
-        __dbg_hook((int)timestampUs);
+    g_IMU_State.calibCounter++;
 }
 
 static void IMU_GetSamples(IMU_Sensor_t s)
@@ -318,7 +334,7 @@ void MotionFX_manager_init(void)
 
     ipKnobs->output_type = MFX_ENGINE_OUTPUT_ENU;
     ipKnobs->LMode = 1;
-    ipKnobs->modx = DECIMATION;
+    ipKnobs->modx = 1;
 
     MotionFX_setKnobs(mfxstate, ipKnobs);
 }

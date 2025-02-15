@@ -47,6 +47,14 @@ extern "C"
 
     void FlightScenario_GetPAT(FlightScenario_PAT_t *pat);
 
+    void FlightScenario_ResetPos();
+
+    void FlightScenario_Init(int algoFreq);
+
+    float FlightScenario_GetAccRma();
+
+    void FlightScenario_GetAcc(Vec3D_t *a);
+
 #ifdef __cplusplus
 }
 #endif

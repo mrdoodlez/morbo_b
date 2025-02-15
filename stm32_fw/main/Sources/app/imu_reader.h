@@ -11,11 +11,11 @@ extern "C"
 
     typedef enum
     {
-        IMU_Mode_Idle,
-        IMU_Mode_CalAcc,
-        IMU_Mode_CalGyro,
-        IMU_Mode_CalMag,
-        IMU_Mode_Fusion,
+        IMU_Mode_Idle,      /*0*/
+        IMU_Mode_CalAcc,    /*1*/
+        IMU_Mode_CalGyro,   /*2*/
+        IMU_Mode_CalMag,    /*3*/
+        IMU_Mode_Fusion,    /*4*/
     } IMU_Mode_t;
 
     typedef enum

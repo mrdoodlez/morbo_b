@@ -8,16 +8,6 @@
 #include "task.h"
 #include "timers.h"
 
-/*
-
-TODO: use one of thos calib matrices
-
-[ 0.9995399713516235 1.0000852346420288 0.9995347857475281 ]   [ -0.003000000026077032 -0.005000000353902578 0.018000001087784767 ]
-[ 0.9987210035324097 1.0028388500213623 1.0009286403656006 ]   [ -0.003000000026077032 -0.0010000000474974513 0.018000001087784767 ] 
-[ 0.9988633990287781 1.0005004405975342 0.9993361830711365 ]   [ -0.003000000026077032 -0.003000000026077032 0.01900000125169754 ] 
-
-*/
-
 #define FUSION_FREQ 250
 #define CALIB_FREQ 50
 
@@ -45,6 +35,10 @@ TODO: use one of thos calib matrices
 #define IMU_NUM_SENSORS (IMU_Sensor_Mag + 1)
 
 static const uint32_t calibInterval = (1000U / CALIB_FREQ);
+
+extern float adafruit_lsm6dsox_acc[];
+
+float *acc_cal = &(adafruit_lsm6dsox_acc[0]);
 
 typedef enum
 {
@@ -144,6 +138,15 @@ void IMU_Init(uint8_t spiDev)
     memset(&g_IMU_State, 0, sizeof(g_IMU_State));
 
     g_IMU_State.spi = spiDev;
+
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[0][0] = acc_cal[0];
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[1][1] = acc_cal[1];
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.scale.r[2][2] = acc_cal[2];
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[0] = acc_cal[3];
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[1] = acc_cal[4];
+    g_IMU_State.sensorData[IMU_Sensor_Acc].cal.ofsset.x[2] = acc_cal[5];
+
+    g_IMU_State.sensorData[IMU_Sensor_Acc].calStatus = 1;
 
     if (LSM6DSOX_0_Probe() != 0)
         ; // TODO: handle error

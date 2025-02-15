@@ -75,13 +75,17 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd);
 static void _Controller_HandlePing(const HIP_Ping_t *cmd);
 static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd);
 static void _Controller_HandleEM(const HIP_EM_t *cmd);
+static void _Controller_HandleWM(const HIP_WM_t *cmd);
+static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd);
 
-static void _Controller_Process();
+static void _Controller_Process(uint8_t newMeas);
 
 static void _Controller_SendMessages();
 
 void _Controller_SendAccAxes();
 void _Controller_SendAccCal();
+
+void _Controller_SendMFX();
 
 void _Controller_SendPAT();
 
@@ -98,6 +102,7 @@ struct
         {.msgId = HIP_MSG_PAT, .emit = _Controller_SendPAT},
         {.msgId = HIP_MSG_ACC, .emit = _Controller_SendAccAxes},
         {.msgId = HIP_MSG_CAL_ACC, .emit = _Controller_SendAccCal},
+        {.msgId = HIP_MSG_MFX, .emit = _Controller_SendMFX},
 };
 
 /******************************************************************************/
@@ -164,7 +169,7 @@ void Controller_Task()
 
     IMU_Init(IMU_BUS);
 
-    IMU_SetMode(IMU_Mode_CalAcc);
+    FlightScenario_Init(250); // TODO: define globally
 
     ControllerMessage_t msg;
 
@@ -184,14 +189,14 @@ void Controller_Task()
                 break;
             }
 
-            _Controller_Process();
+            _Controller_Process(msg.type == ControllerMessageType_Meas);
         }
     }
 }
 
 /******************************************************************************/
 
-static void _Controller_Process()
+static void _Controller_Process(uint8_t newMeas)
 {
     static MachineState_t prevState = MachineState_Disarmed;
 
@@ -216,9 +221,10 @@ static void _Controller_Process()
         }
         */
     }
-    else if (g_controllerState.mState == MachineState_Armed)
+    else if ((g_controllerState.mState == MachineState_Armed) && (newMeas != 0))
     {
-        struct {
+        struct
+        {
             uint64_t time;
             MFX_output_t meas;
         } meas;
@@ -236,7 +242,7 @@ static void _Controller_Process()
             for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
             {
                 g_controllerState.pwm[en] = output.pwm[en];
-                //EC_SetThrottle(en, g_controllerState.pwm[en]);
+                // EC_SetThrottle(en, g_controllerState.pwm[en]);
             }
         }
         else if (fcRes == FlightScenario_Result_Error)
@@ -306,6 +312,12 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
     case HIP_MSG_EM:
         _Controller_HandleEM((HIP_EM_t *)cmd);
         break;
+    case HIP_MSG_WM:
+        _Controller_HandleWM((HIP_WM_t *)cmd);
+        break;
+    case HIP_MSG_RESET_POS:
+        _Controller_HandleResetPos((HIP_ResetPos_t*)cmd);
+        break;
     default:
         _dbg = 1003;
         break;
@@ -365,6 +377,26 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd)
     _dbg = 2002;
 }
 
+static void _Controller_HandleWM(const HIP_WM_t *cmd)
+{
+    IMU_SetMode(cmd->payload.imuMode);
+
+    uint16_t cmdA = HIP_MSG_WM;
+    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+
+    _dbg = 2003;
+}
+
+static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd)
+{
+    FlightScenario_ResetPos();
+
+    uint16_t cmdA = HIP_MSG_RESET_POS;
+    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+
+    _dbg = 2004;
+}
+
 void _Controller_SendMessages()
 {
     uint32_t now = xTaskGetTickCount();
@@ -419,8 +451,25 @@ void _Controller_SendPAT()
     memcpy(ppat.position, pat.p, sizeof(ppat.position));
     memcpy(ppat.rotation, pat.r, sizeof(ppat.rotation));
     ppat.time = pat.time;
+    ppat.accRma = FlightScenario_GetAccRma();
 
     HostIface_PutData(HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
+}
+
+void _Controller_SendMFX()
+{
+    HIP_Payload_MFX_t mfx;
+
+    memcpy(mfx.linear_acceleration,
+           g_controllerState.lastMeas.linear_acceleration, sizeof(mfx.linear_acceleration));
+    memcpy(mfx.rotation,
+           g_controllerState.lastMeas.rotation, sizeof(mfx.rotation));
+
+    Vec3D_t a;
+    FlightScenario_GetAcc(&a);
+    memcpy(mfx.world_acceleration, a.x, sizeof(mfx.world_acceleration));
+
+    HostIface_PutData(HIP_MSG_MFX, (uint8_t *)&mfx, sizeof(mfx));
 }
 
 /******************************************************************************/

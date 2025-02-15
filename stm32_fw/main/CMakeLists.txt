@@ -70,6 +70,7 @@ set (PROJECT_SOURCES
 	Sources/app/mhelpers.c
 	# Sources/app/engine_control.c
 	Sources/app/scenarios.c
+	Sources/app/calibs.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal.c			
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_cortex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_gpio.c

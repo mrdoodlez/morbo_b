@@ -21,8 +21,8 @@ extern "C"
 #define HIP_MSG_THROTTLE 0x0200
 
 #define HIP_MSG_EM 0x0300
-
 #define HIP_MSG_WM 0x0400
+#define HIP_MSG_RESET_POS 0x0500
 
 #define HIP_MSG_PAT 0x0A00
 
@@ -31,6 +31,8 @@ extern "C"
 
 #define HIP_MSG_GYRO 0x0B02
 #define HIP_MSG_CAL_GYRO 0x0B03
+
+#define HIP_MSG_MFX 0x0B04
 
     /******************************************************************************/
 
@@ -97,6 +99,7 @@ extern "C"
     {
         float position[3];
         float rotation[3];
+        float accRma;
         float time;
     } __attribute__((packed)) HIP_Payload_PAT_t;
 
@@ -142,6 +145,39 @@ extern "C"
         uint16_t crc;
     } __attribute__((packed)) HIP_EM_t;
 
+    typedef struct
+    {
+        uint8_t imuMode;
+        uint8_t fcMode;
+    } __attribute__((packed)) HIP_Payload_WM_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_WM_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_WM_t;
+
+    typedef struct
+    {
+        float rotation[3];
+        float world_acceleration[3];
+        float linear_acceleration[3];
+    } __attribute__((packed)) HIP_Payload_MFX_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_MFX_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_MFX_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        uint8_t dummy;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_ResetPos_t;
     typedef struct
     {
         HIP_Header_t header;

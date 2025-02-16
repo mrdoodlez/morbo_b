@@ -5,27 +5,6 @@
 #include <math.h>
 
 #define FS_NUM_EPOCHS 2
-
-#define GRAVITY 9.806
-typedef enum
-{
-    FS_StateFlags_MeasValid = 1 << 0,
-    FS_StateFlags_StateDotValid = 1 << 1,
-    FS_StateFlags_StateValid = 1 << 2,
-} FS_StateFlags_t;
-
-typedef struct
-{
-    float time;
-    MFX_output_t imu;
-
-    float a[3];
-    float v[3];
-    float p[3];
-
-    uint32_t flags;
-} FS_State_t;
-
 static struct
 {
     FS_State_t measBuff[FS_NUM_EPOCHS];
@@ -147,14 +126,14 @@ float FlightScenario_GetAccRma()
     return _copterState.accRma.val;
 }
 
-void FlightScenario_GetAcc(Vec3D_t *a)
+void FlightScenario_GetState(FS_State_t* s)
 {
-    *a = *(Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].a;
+    *s = _copterState.measBuff[_copterState.epochIdx];
 }
 
 static uint8_t IsStatic()
 {
-    float thrH = 3.0 * _copterState.avgA;
+    float thrH = 1.5 * _copterState.avgA;
     float thrL = 0.8 * thrH;
 
     if (_copterState.isStatic && (_copterState.accRma.val > thrH))

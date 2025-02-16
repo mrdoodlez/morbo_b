@@ -146,6 +146,7 @@ MSG_ACC = 0x0B00
 MSG_CAL_ACC = 0x0B01
 
 MSG_MFX = 0x0B04
+MSG_LAV = 0x0B05
 
 CRC = 0xCACB
 
@@ -275,30 +276,35 @@ def handle_cal_acc(payload):
 def handle_pat(payload):
     global pos_yaw, pos_pitch, pos_roll
     global pos_x, pos_y, pos_z
-    pat_data = struct.unpack('<8f', b''.join(payload))
-    pos_x = pat_data[0]
-    pos_y = pat_data[1]
-    pos_z = 0 #pat_data[2]
+    pat_data = struct.unpack('<7f', b''.join(payload))
+    pos_x = -pat_data[0]
+    pos_y = -pat_data[1]
+    pos_z = pat_data[2]
     pos_yaw = pat_data[3]
-    pos_pitch = pat_data[4]
-    pos_roll = pat_data[5]
-    accRma = pat_data[6]
-    time = pat_data[7]
+    pos_pitch = pat_data[5]
+    pos_roll = pat_data[4]
+    time = pat_data[6]
 
-    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_yaw, pos_pitch, pos_roll, ")", accRma)
+    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_yaw, pos_pitch, pos_roll, ")")
 
 def handle_mfx(payload):
     mfx_data = struct.unpack('<9f', b''.join(payload))
 
-    glo_x.append(mfx_data[3])
-    glo_y.append(mfx_data[4])
-    glo_z.append(mfx_data[5])
-
-    lin_x.append(mfx_data[6] * 9.8)
-    lin_y.append(mfx_data[7] * 9.8)
-    lin_z.append(mfx_data[8] * 9.8)
-
     print(mfx_data[3], mfx_data[4], mfx_data[5], mfx_data[6], mfx_data[7], mfx_data[8])
+    
+def handle_lav(payload):
+    global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
+    lav_data = struct.unpack('<10f', b''.join(payload))
+
+    lin_x.append(lav_data[0])
+    lin_y.append(lav_data[1])
+    lin_z.append(lav_data[2])
+
+    glo_x.append(lav_data[3])
+    glo_y.append(lav_data[4])
+    glo_z.append(lav_data[5])
+
+    print(lav_data)
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -314,6 +320,8 @@ def em_command(msgId, msgPeriod, port):
         msgId = MSG_PAT
     elif msgId == "mfx":
         msgId = MSG_MFX
+    elif msgId == "lav":
+        msgId = MSG_LAV
     else:
         print("command not supported")
         return
@@ -499,6 +507,8 @@ def listener_function(name, port):
                     handle_pat(payload)
                 elif cmd == MSG_MFX:
                     handle_mfx(payload)
+                elif cmd == MSG_LAV:
+                    handle_lav(payload)
                 else:
                     print("unknown message: ", cmd)
 
@@ -615,9 +625,9 @@ def visio_flight_function(name):
 
         glTranslatef(pos_x, pos_y, pos_z)
 
-        glRotatef(pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
-        glRotatef(pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
-        glRotatef(pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
+        glRotatef(-pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
+        glRotatef(-pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
+        glRotatef(-pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
 
         # Draw the STL model
         draw_model(faces, normals)

@@ -100,13 +100,13 @@ void FS_QuatMul(Quaternion_t *r, Quaternion_t *q1, Quaternion_t *q2)
 void FS_VecRotQuat(Vec3D_t *x, Quaternion_t *q)
 {
     Quaternion_t qx = {x->x[0], x->x[1], x->x[2], 0};
-    Quaternion_t qx_ = {-x->x[0], -x->x[1], -x->x[2], 0};
+    Quaternion_t q_ = {-q->x, -q->y, -q->z, q->w};
 
     Quaternion_t q1;
-    FS_QuatMul(&q1, q, &qx);
+    FS_QuatMul(&q1, &q_, &qx);
 
     Quaternion_t q2;
-    FS_QuatMul(&q2, &q1, &qx_);
+    FS_QuatMul(&q2, &q1, q);
 
     x->x[0] = q2.x;
     x->x[1] = q2.y;

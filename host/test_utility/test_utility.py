@@ -25,6 +25,9 @@ from OpenGL.GLU import *
 import numpy as np
 from stl import mesh
 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
 ################################################################################
 
 class MService(Service):
@@ -129,11 +132,21 @@ LEN_THROTTLE = 4 * 4 + 1
 CMD_EM = 0x0300
 LEN_EM = 2 + 2
 
+CMD_WM = 0x0400
+LEN_WM = 1 + 1
+
+CMD_RP = 0x0500
+LEN_RP = 1
+
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
-MSG_IMU = 0x0A00
-MSG_PAT = 0x0A01
+MSG_PAT = 0x0A00
+MSG_ACC = 0x0B00
+MSG_CAL_ACC = 0x0B01
+
+MSG_MFX = 0x0B04
+MSG_LAV = 0x0B05
 
 CRC = 0xCACB
 
@@ -159,6 +172,22 @@ pos_z = 0.0
 pos_roll = 0.0
 pos_pitch = 0.0
 pos_yaw = 0.0
+
+################################################################################
+
+time_window = 100  # Number of points to keep in the plot
+t_data = list(range(-time_window, 0))
+
+raw_x, raw_y, raw_z = [0] * time_window, [0] * time_window, [0] * time_window
+cal_x, cal_y, cal_z = [0] * time_window, [0] * time_window, [0] * time_window
+
+lin_x, lin_y, lin_z = [0] * time_window, [0] * time_window, [0] * time_window
+glo_x, glo_y, glo_z = [0] * time_window, [0] * time_window, [0] * time_window
+
+################################################################################
+
+acc_scale = [0] * (3 * 3)
+acc_bias = [0] * 3
 
 ################################################################################
 
@@ -223,27 +252,59 @@ def handle_acknak(ack, payload):
     else:
         ackRx = cmd
 
-def handle_imu(payload):
-    global pos_yaw, pos_pitch, pos_roll
-    imu_data = struct.unpack('<9f', b''.join(payload))
-    pos_yaw = imu_data[0]
-    pos_pitch = imu_data[1]
-    pos_roll = imu_data[2]
-    print(pos_roll, pos_pitch, pos_yaw)
+def handle_acc(payload):
+    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
+    acc_data = struct.unpack('<6f', b''.join(payload))
+
+    raw_x.append(acc_data[0])
+    raw_y.append(acc_data[1])
+    raw_z.append(acc_data[2])
+
+    cal_x.append(acc_data[3])
+    cal_y.append(acc_data[4])
+    cal_z.append(acc_data[5])
+
+    print(acc_data)
+
+def handle_cal_acc(payload):
+    global acc_scale, acc_bias
+    cal_data = struct.unpack('<12fB', b''.join(payload))
+
+    print('[', cal_data[0], cal_data[4], cal_data[8], '] ', \
+        ' [', cal_data[9], cal_data[10], cal_data[11], ']')
 
 def handle_pat(payload):
     global pos_yaw, pos_pitch, pos_roll
     global pos_x, pos_y, pos_z
     pat_data = struct.unpack('<7f', b''.join(payload))
-    pos_x = pat_data[0]
-    pos_y = pat_data[1]
+    pos_x = -pat_data[0]
+    pos_y = -pat_data[1]
     pos_z = pat_data[2]
     pos_yaw = pat_data[3]
-    pos_pitch = pat_data[4]
-    pos_roll = pat_data[5]
+    pos_pitch = pat_data[5]
+    pos_roll = pat_data[4]
     time = pat_data[6]
 
     print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_yaw, pos_pitch, pos_roll, ")")
+
+def handle_mfx(payload):
+    mfx_data = struct.unpack('<9f', b''.join(payload))
+
+    print(mfx_data[3], mfx_data[4], mfx_data[5], mfx_data[6], mfx_data[7], mfx_data[8])
+    
+def handle_lav(payload):
+    global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
+    lav_data = struct.unpack('<10f', b''.join(payload))
+
+    lin_x.append(lav_data[0])
+    lin_y.append(lav_data[1])
+    lin_z.append(lav_data[2])
+
+    glo_x.append(lav_data[3])
+    glo_y.append(lav_data[4])
+    glo_z.append(lav_data[5])
+
+    print(lav_data)
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -251,10 +312,16 @@ def em_command(msgId, msgPeriod, port):
     msgPeriod = int(msgPeriod)
     msgPeriod = int(msgPeriod / 100)
 
-    if msgId == "imu":
-        msgId = MSG_IMU
+    if msgId == "acc":
+        msgId = MSG_ACC
+    elif msgId == "ac":
+        msgId = MSG_CAL_ACC
     elif msgId == "pat":
         msgId = MSG_PAT
+    elif msgId == "mfx":
+        msgId = MSG_MFX
+    elif msgId == "lav":
+        msgId = MSG_LAV
     else:
         print("command not supported")
         return
@@ -274,7 +341,54 @@ def em_command(msgId, msgPeriod, port):
 
     ackRx = ackAwait = -1
 
-    pass
+def wm_command(wm, port):
+    global ackRx, ackAwait
+
+    imuMode = 0
+    fsMode = 0
+
+    if wm == "plot":
+        imuMode = 4
+    elif wm == "cal":
+        imuMode = 1
+    else:
+        print("workmode not supported")
+        return
+
+    cmd = CMD_WM
+    len = LEN_WM
+
+    wm = struct.pack('<2sHHBBH', b'mb', cmd, len, imuMode, fsMode, CRC)
+    port.write(wm)
+
+    ackAwait = CMD_WM
+
+    time.sleep(0.5)
+
+    if ackRx != ackAwait:
+        print("WRN: command not acked")
+
+    ackRx = ackAwait = -1
+
+def reset_pos_command(port):
+    global ackRx, ackAwait
+
+    cmd = CMD_RP
+    len = LEN_RP
+
+    dummy = 0
+
+    rp = struct.pack('<2sHHBH', b'mb', cmd, len, dummy, CRC)
+    port.write(rp)
+
+    ackAwait = CMD_RP
+
+    time.sleep(0.5)
+
+    if ackRx != ackAwait:
+        print("WRN: command not acked")
+
+    ackRx = ackAwait = -1
 
 def pinger_function(name, port):
     global pingSeq
@@ -309,6 +423,10 @@ def console_function(name, port):
                 throttle_set(int(command[1]) / 100.0, port)
         elif command[0] == "em":
             em_command(command[1], command[2], port)
+        elif command[0] == "wm":
+            wm_command(command[1], port)
+        elif command[0] == "rp":
+            reset_pos_command(port)
         if command[0] == 'q':
             doExit = True
 
@@ -334,6 +452,10 @@ def listener_function(name, port):
     while not doExit:
         c = port.read(1)
         if c == b'':
+            continue
+
+        if c is None:
+            state = ProtoState_m
             continue
 
         if state == ProtoState_b:
@@ -365,7 +487,7 @@ def listener_function(name, port):
 
         elif state == ProtoState_crc0:
             rxCrc = int.from_bytes(c, "little")
-            state = ProtoState_crc1;
+            state = ProtoState_crc1
 
         elif state == ProtoState_crc1:
             rxCrc = rxCrc + int.from_bytes(c, "little") * 256
@@ -377,10 +499,18 @@ def listener_function(name, port):
                     handle_acknak(1, payload)
                 elif cmd == MSG_NAK:
                     handle_acknak(0, payload)
-                elif cmd == MSG_IMU:
-                    handle_imu(payload)
+                elif cmd == MSG_ACC:
+                    handle_acc(payload)
+                elif cmd == MSG_CAL_ACC:
+                    handle_cal_acc(payload)
                 elif cmd == MSG_PAT:
                     handle_pat(payload)
+                elif cmd == MSG_MFX:
+                    handle_mfx(payload)
+                elif cmd == MSG_LAV:
+                    handle_lav(payload)
+                else:
+                    print("unknown message: ", cmd)
 
             state = ProtoState_m
 
@@ -449,7 +579,7 @@ def setup_lighting():
     glMaterialfv(GL_FRONT, GL_SPECULAR, [0.5, 0.5, 0.5, 1.0]) # Softer specular reflections
     glMaterialf(GL_FRONT, GL_SHININESS, 10.0)                 # Low shininess for a softer shine
 
-def visio_function(name):
+def visio_flight_function(name):
     pygame.init()
     display = (1024, 768)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
@@ -493,24 +623,146 @@ def visio_function(name):
 
         glPushMatrix()
 
-        glTranslatef(pos_x, pos_y, 0)
+        glTranslatef(pos_x, pos_y, pos_z)
 
-        glRotatef(pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
-        glRotatef(pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
-        glRotatef(pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
+        glRotatef(-pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
+        glRotatef(-pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
+        glRotatef(-pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
 
         # Draw the STL model
         draw_model(faces, normals)
 
         glPopMatrix()
 
-        traj.append((pos_x, pos_y, 0))
-        draw_trajectory(traj)
+        traj.append((pos_x, pos_y, pos_z))
+        # draw_trajectory(traj)
 
         pygame.display.flip()
         clock.tick(60)
 
     pygame.quit()
+
+raw_lines = []
+cal_lines = []
+
+lin_lines = []
+glo_lines = []
+
+fig = None
+
+def update_plot_cal(frame):
+    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
+    global doExit
+    global fig
+
+    if doExit:
+        print("Stopping animation...")
+        plt.close(fig)
+        return
+
+    # Keep only the last 'time_window' points
+    raw_x, raw_y, raw_z = raw_x[-time_window:], raw_y[-time_window:], raw_z[-time_window:]
+    cal_x, cal_y, cal_z = cal_x[-time_window:], cal_y[-time_window:], cal_z[-time_window:]
+
+    # Update plots
+    raw_lines[0].set_ydata(raw_x)
+    raw_lines[1].set_ydata(raw_y)
+    raw_lines[2].set_ydata(raw_z)
+    cal_lines[0].set_ydata(cal_x)
+    cal_lines[1].set_ydata(cal_y)
+    cal_lines[2].set_ydata(cal_z)
+
+    return raw_lines + cal_lines
+
+def update_plot_plot(frame):
+    global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
+    global doExit
+    global fig
+
+    if doExit:
+        print("Stopping animation...")
+        plt.close(fig)
+        return
+
+    # Keep only the last 'time_window' points
+    lin_x, lin_y, lin_z = lin_x[-time_window:], lin_y[-time_window:], lin_z[-time_window:]
+    glo_x, glo_y, glo_z = glo_x[-time_window:], glo_y[-time_window:], glo_z[-time_window:]
+
+    # Update plots
+    lin_lines[0].set_ydata(lin_x)
+    lin_lines[1].set_ydata(lin_y)
+    lin_lines[2].set_ydata(lin_z)
+    glo_lines[0].set_ydata(glo_x)
+    glo_lines[1].set_ydata(glo_y)
+    glo_lines[2].set_ydata(glo_z)
+
+    return lin_lines + glo_lines
+
+def visio_calib_function(name):
+    global fig
+
+    # Create figure and axis
+    fig, ax = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
+
+    # Set labels
+    ax[0].set_ylabel("X Acceleration (g)")
+    ax[1].set_ylabel("Y Acceleration (g)")
+    ax[2].set_ylabel("Z Acceleration (g)")
+    ax[2].set_xlabel("Time (arbitrary units)")
+
+    global raw_lines, cal_lines
+    raw_lines = [ax[i].plot(t_data, [0] * time_window, label="Raw", color='red')[0] for i in range(3)]
+    cal_lines = [ax[i].plot(t_data, [0] * time_window, label="Calibrated", color='blue')[0] for i in range(3)]
+
+    for i in range(3):
+        ax[i].set_ylim(-1.5, 1.5)  # Fixed scale for better comparison
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set legends
+    for i in range(3):
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set up animation
+    ani = animation.FuncAnimation(fig, update_plot_cal, interval=100, blit=True)
+
+    plt.show()
+
+    pass
+
+def visio_plot_function(name):
+    global fig
+
+    # Create figure and axis
+    fig, ax = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
+
+    # Set labels
+    ax[0].set_ylabel("X Acceleration (g)")
+    ax[1].set_ylabel("Y Acceleration (g)")
+    ax[2].set_ylabel("Z Acceleration (g)")
+    ax[2].set_xlabel("Time (arbitrary units)")
+
+    global lin_lines, glo_lines
+    lin_lines = [ax[i].plot(t_data, [0] * time_window, label="linear", color='red')[0] for i in range(3)]
+    glo_lines = [ax[i].plot(t_data, [0] * time_window, label="world", color='blue')[0] for i in range(3)]
+
+    for i in range(3):
+        ax[i].set_ylim(-2, 2)  # Fixed scale for better comparison
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set legends
+    for i in range(3):
+        ax[i].legend(loc="upper right")
+        ax[i].grid(True)
+
+    # Set up animation
+    ani = animation.FuncAnimation(fig, update_plot_plot, interval=100, blit=True)
+
+    plt.show()
+
+    pass
 
 ################################################################################
 
@@ -518,6 +770,8 @@ def main():
     print("Hello boss!")
 
     port = BLEPort()
+
+    mode = input("mode? ").split()
 
     #port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.12)
 
@@ -530,9 +784,14 @@ def main():
     console = threading.Thread(target=console_function, args=("console", port.service,))
     console.start()
 
-    visio = threading.Thread(target=visio_function, args=("visio",))
-    visio.start()
+    if mode[0] == "flight":
+        visio = threading.Thread(target=visio_flight_function, args=("visio",))
+    elif mode[0] == "cal":
+        visio = threading.Thread(target=visio_calib_function, args=("visio",))
+    elif mode[0] == "plot":
+        visio = threading.Thread(target=visio_plot_function, args=("visio",))
 
+    visio.start()
 
 if __name__ == '__main__':
     main()

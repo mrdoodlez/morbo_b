@@ -2,7 +2,7 @@
 #define _CONTROLLER_H_
 
 #include "main.h"
-#include "motion_di.h"
+#include "motion_fx.h"
 #include "host_interface_cmds.h"
 
 #ifdef __cplusplus
@@ -12,7 +12,7 @@ extern "C"
 
 void Controller_Task();
 
-void Controller_NewMeas(const MDI_output_t *mdiData);
+void Controller_NewMeas(const MFX_output_t *mdiData);
 
 void Controller_NewCommand(const HIP_Cmd_t* cmd);
 

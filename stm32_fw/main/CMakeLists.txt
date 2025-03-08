@@ -61,10 +61,12 @@ set (PROJECT_SOURCES
 	Sources/platform/stm32g4xx_hal_msp.c
 	Sources/drivers/serial.c
 	# Sources/drivers/i2c.c
+	Sources/drivers/adc.c
 	Sources/drivers/spi.c
 	# Sources/drivers/gpio.c
 	# Sources/drivers/pca9685.c
 	Sources/app/controller.c
+	Sources/app/monitor.c
 	Sources/app/host_interface.c
 	Sources/app/imu_reader.c
 	Sources/app/mhelpers.c
@@ -88,6 +90,8 @@ set (PROJECT_SOURCES
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc_ex.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_exti.c
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c	

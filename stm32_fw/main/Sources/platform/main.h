@@ -33,17 +33,6 @@ extern "C"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stm32g4xx_nucleo.h"
-/* USER CODE END Includes */
-
-/* Exported types ------------------------------------------------------------*/
-/* USER CODE BEGIN ET */
-
-/* USER CODE END ET */
-
-/* Exported constants --------------------------------------------------------*/
-/* USER CODE BEGIN EC */
-
-/* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
@@ -52,6 +41,13 @@ extern "C"
 
   /* Exported functions prototypes ---------------------------------------------*/
   void Error_Handler(void);
+
+#define IMU_BUS 1
+#define EC_BUS 1
+#define ADC_DEV 1
+
+#define FUSION_FREQ 250
+#define CALIB_FREQ 50
 
 #ifdef __cplusplus
 }

@@ -59,7 +59,7 @@ int main(void)
 
     // GPIO_Init();
 
-    // ADC_Init(1);
+    ADC_Init(1);
 
     xTaskCreateStatic((TaskFunction_t)Controller_Task,
                       (const char *)"MAIN", MAIN_STACK_SIZE / sizeof(StackType_t),

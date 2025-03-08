@@ -8,9 +8,6 @@
 #include "task.h"
 #include "timers.h"
 
-#define FUSION_FREQ 250
-#define CALIB_FREQ 50
-
 #define SAMPLE_RATIO (FUSION_FREQ / CALIB_FREQ)
 
 #define TIMER_FREQ FUSUIN_FREQ

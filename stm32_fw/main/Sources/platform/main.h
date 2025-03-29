@@ -43,8 +43,9 @@ extern "C"
   void Error_Handler(void);
 
 #define IMU_BUS 1
-#define EC_BUS 1
 #define ADC_DEV 1
+#define TIM_DEV 1
+#define EC_BUS TIM_DEV
 
 #define FUSION_FREQ 250
 #define CALIB_FREQ 50

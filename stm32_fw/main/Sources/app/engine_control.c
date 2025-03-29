@@ -1,28 +1,20 @@
 #include "engine_control.h"
-#include "pca9685.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "gpio.h"
-#include "i2c.h"
+#include "timer.h"
 
-#define PCA9685_ADDR 0x80
+static uint32_t _timDev;
+static float _timPerMs = 0.0;
 
-static int _i2cDev;
-
-/******************************************************************************/
-
-int EC_Init(int i2cDev)
+int EC_Init(int timDev)
 {
-    _i2cDev = i2cDev;
+    _timDev = timDev;
 
-    GPIO_Set(GPIO_Channel_0, 1);
-
-    PCA9685_Init(_i2cDev, PCA9685_ADDR, 0);
-    PCA9685_SetPWMFreq(450);
+    _timPerMs = 1000.0 / Timer_GetFreq(_timDev);
 
     for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
     {
-        EC_SetThrottle(en, 0.0);
+        EC_SetThrottle((Timer_OutputCh_t)en, 0.0);
     }
 
     vTaskDelay(100);
@@ -32,19 +24,22 @@ int EC_Init(int i2cDev)
 
 void EC_SetThrottle(EC_Engine_t engine, float throttle)
 {
-    // TODO: remove it
-    if (throttle > 0.15)
-        throttle = 0.15;
-
     if (throttle > 1.0)
         throttle = 1.0;
 
-    I2C_Lock(_i2cDev);
-    PCA9685_WriteMicroseconds(engine, (1.0 + throttle) * 1.0e3);
-    I2C_Unlock(_i2cDev);
+    if (throttle > 0.15) // TODO: remoce it!
+        throttle = 0.15;
+
+    float duty = (1.0 + throttle) / _timPerMs;
+
+    Timer_SetPWM(_timDev, (Timer_OutputCh_t)engine, duty);
+    Timer_Enable(_timDev, (Timer_OutputCh_t)engine, 1);
 }
 
 void EC_Enable(uint8_t en)
 {
-    GPIO_Set(GPIO_Channel_0, en ? 0 : 1);
+    for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+    {
+        EC_SetThrottle((Timer_OutputCh_t)en, en);
+    }
 }

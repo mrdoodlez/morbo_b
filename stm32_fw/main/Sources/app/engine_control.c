@@ -14,7 +14,7 @@ int EC_Init(int timDev)
 
     for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
     {
-        EC_SetThrottle((Timer_OutputCh_t)en, 0.0);
+        EC_SetThrottle((Timer_OutputCh_t)en, 0.0, 1);
     }
 
     vTaskDelay(100);
@@ -22,7 +22,7 @@ int EC_Init(int timDev)
     return 0;
 }
 
-void EC_SetThrottle(EC_Engine_t engine, float throttle)
+void EC_SetThrottle(EC_Engine_t engine, float throttle, int init)
 {
     if (throttle > 1.0)
         throttle = 1.0;
@@ -32,14 +32,22 @@ void EC_SetThrottle(EC_Engine_t engine, float throttle)
 
     float duty = (1.0 + throttle) / _timPerMs;
 
-    Timer_SetPWM(_timDev, (Timer_OutputCh_t)engine, duty);
-    Timer_Enable(_timDev, (Timer_OutputCh_t)engine, 1);
+    if (init)
+    {
+        Timer_Enable(_timDev, (Timer_OutputCh_t)engine, 0);
+        Timer_SetPWM(_timDev, (Timer_OutputCh_t)engine, duty, 0);
+        Timer_Enable(_timDev, (Timer_OutputCh_t)engine, 1);
+    }
+    else
+    {
+        Timer_SetPWM(_timDev, (Timer_OutputCh_t)engine, duty, 1);
+    }
 }
 
-void EC_Enable(uint8_t en)
+void EC_Enable(uint8_t enable)
 {
     for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
     {
-        EC_SetThrottle((Timer_OutputCh_t)en, en);
+        Timer_Enable(_timDev, (Timer_OutputCh_t)en, enable);
     }
 }

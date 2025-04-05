@@ -18,7 +18,7 @@ extern "C"
 
     int EC_Init(int i2cDev);
 
-    void EC_SetThrottle(EC_Engine_t engine, float throttle);
+    void EC_SetThrottle(EC_Engine_t engine, float throttle, int init);
 
     void EC_Enable(uint8_t en);
 

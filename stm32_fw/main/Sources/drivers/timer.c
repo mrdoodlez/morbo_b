@@ -13,6 +13,8 @@ static const uint32_t _channels[] = {
     TIM_CHANNEL_3,
     TIM_CHANNEL_4};
 
+static uint32_t _running[Timer_OutputCh_Tot];
+
 static TIM_OC_InitTypeDef sConfigOC[Timer_OutputCh_Tot];
 
 static TIM_HandleTypeDef htim1;
@@ -35,33 +37,60 @@ float Timer_GetFreq(int dev)
     return (float)TIM_FREQ;
 }
 
-void Timer_SetPWM(int dev, Timer_OutputCh_t oc, float ratio)
+void Timer_SetPWM(int dev, Timer_OutputCh_t oc, float ratio, int reload)
 {
-    sConfigOC[oc].OCMode = TIM_OCMODE_PWM1;
-    sConfigOC[oc].Pulse = (uint32_t)(ratio * PERIOD_VALUE);
-    sConfigOC[oc].OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC[oc].OCNPolarity = TIM_OCNPOLARITY_HIGH;
-    sConfigOC[oc].OCFastMode = TIM_OCFAST_DISABLE;
-    sConfigOC[oc].OCIdleState = TIM_OCIDLESTATE_RESET;
-    sConfigOC[oc].OCNIdleState = TIM_OCNIDLESTATE_RESET;
-    if (HAL_TIM_PWM_ConfigChannel(&htim1, &(sConfigOC[oc]),
-                                  _channels[oc]) != HAL_OK)
+    uint32_t pulse = (uint32_t)(ratio * PERIOD_VALUE);
+
+    if (!reload)
     {
-        Error_Handler();
+        sConfigOC[oc].OCMode = TIM_OCMODE_PWM1;
+        sConfigOC[oc].Pulse = pulse;
+        sConfigOC[oc].OCPolarity = TIM_OCPOLARITY_HIGH;
+        sConfigOC[oc].OCNPolarity = TIM_OCNPOLARITY_HIGH;
+        sConfigOC[oc].OCFastMode = TIM_OCFAST_DISABLE;
+        sConfigOC[oc].OCIdleState = TIM_OCIDLESTATE_RESET;
+        sConfigOC[oc].OCNIdleState = TIM_OCNIDLESTATE_RESET;
+        if (HAL_TIM_PWM_ConfigChannel(&htim1, &(sConfigOC[oc]),
+                                    _channels[oc]) != HAL_OK)
+        {
+            Error_Handler();
+        }
+    }
+    else
+    {
+        switch(oc)
+        {
+            case Timer_OutputCh_0:
+                htim1.Instance->CCR1 = pulse;
+                break;
+            case Timer_OutputCh_1:
+                htim1.Instance->CCR2 = pulse;
+                break;
+            case Timer_OutputCh_2:
+                htim1.Instance->CCR3 = pulse;
+                break;
+            case Timer_OutputCh_3:
+                htim1.Instance->CCR4 = pulse;
+                break;
+            default:
+                break;
+        }
     }
 }
 
 void Timer_Enable(int dev, Timer_OutputCh_t oc, int en)
 {
-    if (en)
+    if (en && (_running[oc] != en))
     {
         if (HAL_TIM_PWM_Start(&htim1, _channels[oc]) != HAL_OK)
         {
             /* PWM generation Error */
             Error_Handler();
         }
+
+        _running[oc] = 1;
     }
-    else
+    else if (!en)
     {
         if (HAL_TIM_PWM_Stop(&htim1, _channels[oc]) != HAL_OK)
         {
@@ -71,6 +100,8 @@ void Timer_Enable(int dev, Timer_OutputCh_t oc, int en)
 
         // we don't want to stop the timer anyway
         __HAL_TIM_ENABLE(&htim1);
+
+        _running[oc] = 0;
     }
 }
 

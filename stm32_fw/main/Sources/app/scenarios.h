@@ -63,6 +63,8 @@ extern "C"
         float pwm[4];
     } ControlOutputs_t;
 
+    int FlightScenario_SetScenario(FlightScenario_t s);
+
     int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data);
 
     FlightScenario_Result_t FlightScenario(ControlOutputs_t *output);

@@ -45,8 +45,8 @@ int ADC_Read(int dev, ADC_Chan_t chan, ADC_ConvertCb cb)
     if (dev != 1)
         return -1;
 
-    if (_adcContext.convInProgress)
-        return -2;
+    //if (_adcContext.convInProgress)
+    //    return -2;
 
     SelectChannel(chan);
 

@@ -35,6 +35,8 @@ extern "C"
 #define HIP_MSG_MFX 0x0B04
 #define HIP_MSG_LAV 0x0B05
 
+#define HIP_MSG_MON 0x0C00
+
     /******************************************************************************/
 
     typedef struct
@@ -186,6 +188,20 @@ extern "C"
         HIP_Payload_LAV_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_LAV_t;
+
+    typedef struct
+    {
+        float throttle[4];
+        float vbat;
+        float ch1;
+    } __attribute__((packed)) HIP_Payload_Mon_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_Mon_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_Mon_t;
 
     typedef struct
     {

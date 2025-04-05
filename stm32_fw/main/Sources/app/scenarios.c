@@ -7,6 +7,8 @@
 #define FS_NUM_EPOCHS 2
 static struct
 {
+    FlightScenario_t scenario;
+
     FS_State_t measBuff[FS_NUM_EPOCHS];
     uint8_t epochIdx;
 
@@ -17,6 +19,8 @@ static struct
     int isStatic;
 
     uint32_t epochCounter;
+
+    float pwm[4];
 } _copterState;
 
 static uint8_t IsStatic();
@@ -29,6 +33,14 @@ void FlightScenario_Init(int algoFreq)
 
     _copterState.accRma.windowSz = 0.5 * algoFreq;
     _copterState.isStatic = 1;
+
+    _copterState.scenario = FlightScenario_None;
+}
+
+int FlightScenario_SetScenario(FlightScenario_t s)
+{
+    _copterState.scenario = s;
+    return 0;
 }
 
 int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data)
@@ -50,6 +62,7 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data)
     }
     else if (type == FlightScenario_Input_DebugPwms)
     {
+        memcpy(_copterState.pwm, data, sizeof(_copterState.pwm));
     }
     return 0;
 }
@@ -106,6 +119,12 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
     _copterState.measBuff[_copterState.epochIdx].flags = 0;
 
     _copterState.epochCounter++;
+
+    if (_copterState.scenario == FlightScenario_Debug)
+    {
+        memcpy(output->pwm, _copterState.pwm, sizeof(_copterState.pwm));
+        return FlightScenario_Result_OK;
+    }
 
     return FlightScenario_Result_None;
 }

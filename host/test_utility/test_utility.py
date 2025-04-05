@@ -148,6 +148,8 @@ MSG_CAL_ACC = 0x0B01
 MSG_MFX = 0x0B04
 MSG_LAV = 0x0B05
 
+MSG_MON = 0x0C00
+
 CRC = 0xCACB
 
 HIP_SYMBOL_B = b'b'
@@ -291,7 +293,7 @@ def handle_mfx(payload):
     mfx_data = struct.unpack('<9f', b''.join(payload))
 
     print(mfx_data[3], mfx_data[4], mfx_data[5], mfx_data[6], mfx_data[7], mfx_data[8])
-    
+
 def handle_lav(payload):
     global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
     lav_data = struct.unpack('<10f', b''.join(payload))
@@ -305,6 +307,12 @@ def handle_lav(payload):
     glo_z.append(lav_data[5])
 
     print(lav_data)
+
+def handle_mon(payload):
+    mon_data = struct.unpack('<6f', b''.join(payload))
+
+    print(mon_data)
+
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -322,6 +330,8 @@ def em_command(msgId, msgPeriod, port):
         msgId = MSG_MFX
     elif msgId == "lav":
         msgId = MSG_LAV
+    elif msgId == "mon":
+        msgId = MSG_MON
     else:
         print("command not supported")
         return
@@ -341,19 +351,22 @@ def em_command(msgId, msgPeriod, port):
 
     ackRx = ackAwait = -1
 
-def wm_command(wm, port):
+def wm_command(wm, fc, port):
     global ackRx, ackAwait
 
     imuMode = 0
     fsMode = 0
 
-    if wm == "plot":
+    if wm == "fuse":
         imuMode = 4
     elif wm == "cal":
         imuMode = 1
     else:
-        print("workmode not supported")
+        print("imu mode not supported")
         return
+
+    if fc == "dbg":
+        fsMode = 1
 
     cmd = CMD_WM
     len = LEN_WM
@@ -424,7 +437,7 @@ def console_function(name, port):
         elif command[0] == "em":
             em_command(command[1], command[2], port)
         elif command[0] == "wm":
-            wm_command(command[1], port)
+            wm_command(command[1], command[2], port)
         elif command[0] == "rp":
             reset_pos_command(port)
         if command[0] == 'q':
@@ -509,6 +522,8 @@ def listener_function(name, port):
                     handle_mfx(payload)
                 elif cmd == MSG_LAV:
                     handle_lav(payload)
+                elif cmd == MSG_MON:
+                    handle_mon(payload)
                 else:
                     print("unknown message: ", cmd)
 

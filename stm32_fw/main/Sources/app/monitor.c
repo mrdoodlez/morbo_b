@@ -6,7 +6,7 @@
 
 #define ADC_SCALE (3.3 / 4096.0)
 
-#define VBAT_BRIDGE_SCALE (12.06 / 2.334)
+#define VBAT_BRIDGE_SCALE (12.06 / 2.19)
 
 static struct
 {

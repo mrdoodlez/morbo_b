@@ -21,7 +21,7 @@ extern "C"
 
     void Timer_Init(int dev);
 
-    void Timer_SetPWM(int dev, Timer_OutputCh_t ch, float ratio);
+    void Timer_SetPWM(int dev, Timer_OutputCh_t oc, float ratio, int reload);
 
     void Timer_Enable(int dev, Timer_OutputCh_t ch, int en);
 

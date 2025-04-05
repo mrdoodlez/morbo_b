@@ -28,7 +28,6 @@ typedef enum
 {
     MachineState_Disarmed,
     MachineState_Armed,
-    MachineState_Debug,
     MachineState_HardFault,
 } MachineState_t;
 
@@ -94,6 +93,8 @@ static void _Controller_SendLAV();
 
 static void _Controller_SendPAT();
 
+static void _Controller_SendMon();
+
 /******************************************************************************/
 
 struct
@@ -109,6 +110,7 @@ struct
         {.msgId = HIP_MSG_CAL_ACC, .emit = _Controller_SendAccCal},
         {.msgId = HIP_MSG_MFX, .emit = _Controller_SendMFX},
         {.msgId = HIP_MSG_LAV, .emit = _Controller_SendLAV},
+        {.msgId = HIP_MSG_MON, .emit = _Controller_SendMon},
 };
 
 /******************************************************************************/
@@ -213,25 +215,17 @@ static void _Controller_Process(uint8_t newMeas)
 
     g_controllerState.rt = Timer_GetRuntime(1);
 
-    if ((prevState != g_controllerState.mState) && (g_controllerState.mState == MachineState_Armed))
+    if ((prevState == MachineState_Disarmed)
+        && (g_controllerState.mState == MachineState_Armed))
     {
         EC_Enable(0);
 
         for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
         {
-            EC_SetThrottle(en, 0);
+            EC_SetThrottle(en, 0, 1);
         }
 
         EC_Enable(1);
-
-        vTaskDelay(1000);
-
-        for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
-        {
-            g_controllerState.pwm[en] = 0.1;
-            EC_SetThrottle(en, g_controllerState.pwm[en]);
-        }
-
     }
     else if ((g_controllerState.mState == MachineState_Armed) && (newMeas != 0))
     {
@@ -254,13 +248,17 @@ static void _Controller_Process(uint8_t newMeas)
             for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
             {
                 g_controllerState.pwm[en] = output.pwm[en];
-                // EC_SetThrottle(en, g_controllerState.pwm[en]);
+                EC_SetThrottle(en, g_controllerState.pwm[en], 0);
             }
         }
         else if (fcRes == FlightScenario_Result_Error)
         {
-            g_controllerState.mState = MachineState_HardFault;
+            Controller_HandleFatal();
         }
+    }
+    else if (g_controllerState.mState == MachineState_Disarmed)
+    {
+        EC_Enable(0);
     }
 
     prevState = g_controllerState.mState;
@@ -300,7 +298,7 @@ void Controller_NewCommand(const HIP_Cmd_t *cmd)
 void Controller_HandleFatal()
 {
     g_controllerState.mState = MachineState_HardFault;
-    // EC_Enable(0);
+    EC_Enable(0);
 }
 
 /******************************************************************************/
@@ -338,7 +336,8 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
 
 static void _Controller_HandlePing(const HIP_Ping_t *cmd)
 {
-    g_controllerState.mState = MachineState_Armed;
+    if (g_controllerState.mState != MachineState_HardFault)
+        g_controllerState.mState = MachineState_Armed;
 
     uint16_t rxSeq = cmd->payload.seqNumber;
     HostIface_PutData(HIP_MSG_PING, (uint8_t *)&rxSeq, sizeof(rxSeq));
@@ -350,11 +349,11 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd)
 {
     if ((cmd->payload.flags & HIP_Throttle_Flags_Enable) == 0)
     {
-        // EC_Enable(0);
+        EC_Enable(0);
     }
     else
     {
-        // EC_Enable(1);
+        EC_Enable(1);
 
         float throttles[4] = {-1, -1, -1, -1};
         if ((cmd->payload.flags & HIP_Throttle_Flags_Eng1) != 0)
@@ -392,6 +391,7 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd)
 static void _Controller_HandleWM(const HIP_WM_t *cmd)
 {
     IMU_SetMode(cmd->payload.imuMode);
+    FlightScenario_SetScenario(cmd->payload.fcMode);
 
     uint16_t cmdA = HIP_MSG_WM;
     HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
@@ -499,6 +499,17 @@ void _Controller_SendLAV()
     HostIface_PutData(HIP_MSG_LAV, (uint8_t *)&lav, sizeof(lav));
 }
 
+void _Controller_SendMon()
+{
+    HIP_Payload_Mon_t mon;
+
+    memcpy(mon.throttle, g_controllerState.pwm, sizeof(mon.throttle));
+    mon.vbat = g_controllerState.vbat;
+    mon.ch1 = g_controllerState.ch1;
+
+    HostIface_PutData(HIP_MSG_MON, (uint8_t *)&mon, sizeof(mon));
+}
+
 /******************************************************************************/
 
 static void _Watchdog_Task() // TODO: enable normal watchdog
@@ -509,7 +520,8 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
 
         if ((now - g_controllerState.lastPing) > 2000)
         {
-            Controller_HandleFatal();
+            g_controllerState.mState = MachineState_Disarmed;
+            EC_Enable(0);
         }
 
         vTaskDelay(500);

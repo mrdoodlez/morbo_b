@@ -112,3 +112,23 @@ void FS_VecRotQuat(Vec3D_t *x, Quaternion_t *q)
     x->x[1] = q2.y;
     x->x[2] = q2.z;
 }
+
+static inline float npow(float x, unsigned int n)
+{
+    for (unsigned int i = 1; i < n; i++)
+        x *= x;
+
+    return x;
+}
+
+void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot)
+{
+    if (x < 0.0)
+        x = 0.0;
+    if (x > 1.0)
+        x = 1.0;
+
+    *y = npow(x, 5) * (70 * npow(x, 4) - 315 * npow(x, 3) + 540 * x * x - 420 * x + 126);
+    *yDot = 630 * npow(x, 4) * (npow(x, 4) - 4 * npow(x, 3) + 6 * x * x - 4 * x + 1);
+    *yDotDot = npow(x , 3) * (540 * npow(x, 4) - 17640 * npow(x, 3) + 22680 * x * x - 12600 * x + 2520);
+}

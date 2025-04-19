@@ -25,6 +25,8 @@ from OpenGL.GLU import *
 import numpy as np
 from stl import mesh
 
+# import matplotlib
+# # matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
@@ -193,6 +195,10 @@ acc_bias = [0] * 3
 
 ################################################################################
 
+fLog = None
+
+################################################################################
+
 def throttle_set(val, port):
     global ackRx, ackAwait
 
@@ -309,9 +315,12 @@ def handle_lav(payload):
     print(lav_data)
 
 def handle_mon(payload):
+    global fLog
     mon_data = struct.unpack('<6f', b''.join(payload))
-
     print(mon_data)
+
+    log_str = ' '.join(f'{v:.6f}' for v in mon_data)
+    fLog.write("MON: " + log_str + "\n")
 
 
 def em_command(msgId, msgPeriod, port):
@@ -367,6 +376,8 @@ def wm_command(wm, fc, port):
 
     if fc == "dbg":
         fsMode = 1
+    if fc == "wu":
+        fsMode = 2
 
     cmd = CMD_WM
     len = LEN_WM
@@ -783,6 +794,9 @@ def visio_plot_function(name):
 
 def main():
     print("Hello boss!")
+
+    global fLog
+    fLog = open('log.txt', 'w')
 
     port = BLEPort()
 

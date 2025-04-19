@@ -50,6 +50,8 @@ void FS_Integate3D(Vec3D_t *y, Vec3D_t *y_, Vec3D_t *x, Vec3D_t *x_, float h);
 
 void FS_RmaUpdate(RMA_t *a, float val);
 
+void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot);
+
 #ifdef __cplusplus
 }
 #endif

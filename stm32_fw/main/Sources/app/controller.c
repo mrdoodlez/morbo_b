@@ -213,7 +213,7 @@ static void _Controller_Process(uint8_t newMeas)
     g_controllerState.vbat = Monitor_GetVbat();
     g_controllerState.ch1 = Monitor_GetCh1();
 
-    g_controllerState.rt = Timer_GetRuntime(1);
+    g_controllerState.rt = Controller_GetUS();
 
     if ((prevState == MachineState_Disarmed)
         && (g_controllerState.mState == MachineState_Armed))
@@ -532,5 +532,5 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
 
 uint64_t Controller_GetUS()
 {
-    return 1000LL * xTaskGetTickCount();
+    return Timer_GetRuntime(1);
 }

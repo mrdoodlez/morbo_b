@@ -130,5 +130,67 @@ void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot)
 
     *y = npow(x, 5) * (70 * npow(x, 4) - 315 * npow(x, 3) + 540 * x * x - 420 * x + 126);
     *yDot = 630 * npow(x, 4) * (npow(x, 4) - 4 * npow(x, 3) + 6 * x * x - 4 * x + 1);
-    *yDotDot = npow(x , 3) * (540 * npow(x, 4) - 17640 * npow(x, 3) + 22680 * x * x - 12600 * x + 2520);
+    *yDotDot = npow(x, 3) * (540 * npow(x, 4) - 17640 * npow(x, 3) + 22680 * x * x - 12600 * x + 2520);
+}
+
+int FS_SolveLS(uint32_t N, float *A, float *b, float *x)
+{
+    static const float EPSILON = 1.0e-6;
+    int i, j, k, maxRow;
+    float tmp;
+
+    // Forward elimination with partial pivoting
+    for (i = 0; i < N; i++)
+    {
+        // Pivot
+        maxRow = i;
+        for (k = i + 1; k < N; k++)
+        {
+            if (fabsf(A[k * N + i]) > fabsf(A[maxRow * N + i]))
+            {
+                maxRow = k;
+            }
+        }
+
+        // Swap rows in A
+        for (j = 0; j < N; j++)
+        {
+            tmp = A[i * N + j];
+            A[i * N + j] = A[maxRow * N + j];
+            A[maxRow * N + j] = tmp;
+        }
+
+        // Swap elements in b
+        tmp = b[i];
+        b[i] = b[maxRow];
+        b[maxRow] = tmp;
+
+        // Check for singular matrix
+        if (fabsf(A[i * N + i]) < EPSILON)
+            return 0; // No solution
+
+        // Eliminate column below pivot
+        for (k = i + 1; k < N; k++)
+        {
+            float f = A[k * N + i] / A[i * N + i];
+            for (j = i; j < N; j++)
+            {
+                A[k * N + j] -= f * A[i * N + j];
+            }
+            b[k] -= f * b[i];
+        }
+    }
+
+    // Back substitution
+    for (i = N - 1; i >= 0; i--)
+    {
+        x[i] = b[i];
+        for (j = i + 1; j < N; j++)
+        {
+            x[i] -= A[i * N + j] * x[j];
+        }
+        x[i] /= A[i * N + i];
+    }
+
+    return 1; // Success
 }

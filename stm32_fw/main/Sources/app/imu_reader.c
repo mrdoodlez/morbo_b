@@ -316,17 +316,17 @@ void MotionFX_manager_init(void)
 
     MotionFX_getKnobs(mfxstate, ipKnobs);
 
-    ipKnobs->acc_orientation[0] = 'e';
-    ipKnobs->acc_orientation[1] = 'n';
-    ipKnobs->acc_orientation[2] = 'u';
+    ipKnobs->acc_orientation[0] = 'n';
+    ipKnobs->acc_orientation[1] = 'e';
+    ipKnobs->acc_orientation[2] = 'd';
 
-    ipKnobs->gyro_orientation[0] = 'e';
-    ipKnobs->gyro_orientation[1] = 'n';
-    ipKnobs->gyro_orientation[2] = 'u';
+    ipKnobs->gyro_orientation[0] = 'n';
+    ipKnobs->gyro_orientation[1] = 'e';
+    ipKnobs->gyro_orientation[2] = 'd';
 
-    ipKnobs->mag_orientation[0] = 's';
+    ipKnobs->mag_orientation[0] = 'n';
     ipKnobs->mag_orientation[1] = 'e';
-    ipKnobs->mag_orientation[2] = 'u';
+    ipKnobs->mag_orientation[2] = 'd';
 
     ipKnobs->gbias_acc_th_sc = GBIAS_ACC_TH_SC;
     ipKnobs->gbias_gyro_th_sc = GBIAS_GYRO_TH_SC;

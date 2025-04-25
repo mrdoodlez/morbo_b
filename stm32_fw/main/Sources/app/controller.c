@@ -484,7 +484,8 @@ void _Controller_SendMFX()
 void _Controller_SendLAV()
 {
     Vec3D_t la = *(Vec3D_t *)(g_controllerState.lastMeas.linear_acceleration);
-    FS_ScaleVec(GRAVITY, &la);
+    extern float gravity;
+    FS_ScaleVec(gravity, &la);
 
     FS_State_t s;
     FlightScenario_GetState(&s);

@@ -52,6 +52,8 @@ void FS_RmaUpdate(RMA_t *a, float val);
 
 void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot);
 
+int FS_SolveLS(uint32_t N, float *A, float *b, float *x);
+
 #ifdef __cplusplus
 }
 #endif

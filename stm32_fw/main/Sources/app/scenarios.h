@@ -5,8 +5,6 @@
 #include "mhelpers.h"
 #include "motion_fx.h"
 
-#define GRAVITY 9.806
-
 #ifdef __cplusplus
 extern "C"
 {

@@ -9,10 +9,14 @@
 #define FS_NUM_EPOCHS 2
 #define NUM_PROGRAMS 2
 
+#define NUM_ENGINES 4
+
 static FlightScenario_Result_t Estimate();
 
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *);
+
+static FlightScenario_Result_t FlightScenario_Hover(ControlOutputs_t *output);
 
 typedef enum
 {
@@ -55,9 +59,14 @@ static struct
     uint32_t epochCounter;
 
     float pwm[4];
+    float thrustN[4];  // [N]
+
+    int inAir;
 } _copterState;
 
 static uint8_t IsStatic();
+
+extern float gravity;
 
 /******************************************************************************/
 
@@ -79,10 +88,11 @@ void FlightScenario_Init(int algoFreq)
     _copterState.isStatic = 1;
 }
 
+// TODO: implement preemtive scenarios!
 int FlightScenario_SetScenario(FlightScenario_t s)
 {
     uint32_t curr = _copterState.scCounter;
-    uint32_t set = (_copterState.scenarios[curr].status != FlightScenarioStatus_Running)
+    uint32_t set = (_copterState.scenarios[curr].status != FlightScenarioStatus_Running) // || isPreemtive
                        ? curr
                        : (curr + 1) % NUM_PROGRAMS;
 
@@ -144,6 +154,10 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
     if (_copterState.scenarios[curr].status == FlightScenarioStatus_Running)
         return _copterState.scenarios[curr].exec(output);
 
+    // if we are flying let's not fall
+    if (_copterState.inAir)
+        return FlightScenario_Hover(output);
+
     return FlightScenario_Result_None;
 }
 
@@ -181,7 +195,7 @@ static FlightScenario_Result_t Estimate()
             Vec3D_t *a = (Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].a;
             *a = *(Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].imu.linear_acceleration;
 
-            FS_ScaleVec(GRAVITY, a);
+            FS_ScaleVec(gravity, a);
             FS_VecRotQuat(a, (Quaternion_t *)&_copterState.measBuff[_copterState.epochIdx].imu.quaternion);
 
             Vec3D_t *a_ = (Vec3D_t *)&_copterState.measBuff[prevIdx].a;
@@ -212,7 +226,11 @@ static FlightScenario_Result_t Estimate()
                 _copterState.measBuff[_copterState.epochIdx].flags |= FS_StateFlags_StateValid;
 
                 memcpy(_copterState.pat.p, p, sizeof(_copterState.pat.p));
-                memcpy(_copterState.pat.r, _copterState.measBuff[prevIdx].imu.rotation, sizeof(_copterState.pat.r));
+
+                // in MFX rotation is returned as yaw, pitch, roll
+                _copterState.pat.r[0] = _copterState.measBuff[prevIdx].imu.rotation[2]; // roll
+                _copterState.pat.r[1] = _copterState.measBuff[prevIdx].imu.rotation[1]; // pitch
+                _copterState.pat.r[2] = _copterState.measBuff[prevIdx].imu.rotation[0]; // yaw
                 _copterState.pat.time = _copterState.measBuff[_copterState.epochIdx].time;
             }
         }
@@ -248,17 +266,70 @@ static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *outpu
     float sigVal, sigValDot, sigValDotDot;
     FS_Sigmoid(ratio, &sigVal, &sigValDot, &sigValDotDot);
 
-    extern float copterMassG;
-    float deltaThrust = copterMassG;
+    extern float copterMassKg;
+    float deltaThrust = copterMassKg;
     float totThrust = deltaThrust * sigVal;
-    float engThrust = totThrust / 4.0;
-    float motorVoltage = VoltageForThrust(engThrust);
-
+    float engThrust = totThrust / NUM_ENGINES;
+    float motorVoltage = VoltageForThrust(engThrust * 1000.0);  // input in gramms
     float pwm = motorVoltage / Monitor_GetVbat();
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < NUM_ENGINES; i++)
+    {
+        _copterState.pwm[i] = pwm;
+        _copterState.thrustN[i] = engThrust * gravity;
         output->pwm[i] = pwm;
+    }
+
+    _copterState.inAir = 1;
 
     return FlightScenario_Result_OK;
+}
+
+static const float _thrustMatrix[] = {
+    +1.0, +1.0, +1.0, +1.0,
+    +1.0, +1.0, -1.0, -1.0,
+    -1.0, +1.0, -1.0, +1.0,
+    -1.0, +1.0, +1.0, -1.0,
+};
+
+extern void __dbg_hook(int arg);
+
+static FlightScenario_Result_t FlightScenario_Hover(ControlOutputs_t *output)
+{
+    float tgRot[] = {0, 0, 0};
+    float kpRot[] = {1, 1, 1};
+    float inertia[] = {1, 1, 1};
+
+    float b[NUM_ENGINES];
+    extern float copterMassKg;
+    b[0] = copterMassKg * gravity;
+    for (int i = 0; i < FS_NUM_AXIS; i++)
+    {
+        b[1 + i] = inertia[i] * (kpRot[i] * (tgRot[i] - _copterState.pat.r[i]) /* + */);
+    }
+
+    float A[NUM_ENGINES * NUM_ENGINES];
+    memcpy(A, _thrustMatrix, sizeof(A));
+
+    float x[NUM_ENGINES];
+    if (FS_SolveLS(NUM_ENGINES, A, b, x ) == 1)
+    {
+        __dbg_hook(100010);
+
+        for (int i = 0; i < NUM_ENGINES; i++)
+        {
+            _copterState.thrustN[i] = x[i];
+            float engThrustG = x[i] / gravity * 1000.0;
+            float motorVoltage = VoltageForThrust(engThrustG);
+            float pwm = motorVoltage / Monitor_GetVbat();
+
+            _copterState.pwm[i] = pwm;
+            output->pwm[i] = pwm;
+        }
+
+        return FlightScenario_Result_OK;
+    }
+
+    return FlightScenario_Result_None;
 }
 
 static uint8_t IsStatic()

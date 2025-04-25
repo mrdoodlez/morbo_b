@@ -25,8 +25,8 @@ from OpenGL.GLU import *
 import numpy as np
 from stl import mesh
 
-# import matplotlib
-# # matplotlib.use('Qt5Agg')
+import matplotlib
+matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
@@ -285,15 +285,16 @@ def handle_pat(payload):
     global pos_yaw, pos_pitch, pos_roll
     global pos_x, pos_y, pos_z
     pat_data = struct.unpack('<7f', b''.join(payload))
-    pos_x = -pat_data[0]
-    pos_y = -pat_data[1]
+    pos_x = pat_data[0]
+    pos_y = pat_data[1]
     pos_z = pat_data[2]
-    pos_yaw = pat_data[3]
-    pos_pitch = pat_data[5]
-    pos_roll = pat_data[4]
+    pos_roll = pat_data[3]
+    pos_pitch = pat_data[4]
+    pos_yaw = pat_data[5]
+
     time = pat_data[6]
 
-    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_yaw, pos_pitch, pos_roll, ")")
+    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_roll, pos_pitch, pos_yaw, ")")
 
 def handle_mfx(payload):
     mfx_data = struct.unpack('<9f', b''.join(payload))
@@ -312,7 +313,7 @@ def handle_lav(payload):
     glo_y.append(lav_data[4])
     glo_z.append(lav_data[5])
 
-    print(lav_data)
+    print("(", lav_data[0], lav_data[1], lav_data[2], ")", "(", lav_data[3], lav_data[4], lav_data[5], ")")
 
 def handle_mon(payload):
     global fLog
@@ -649,7 +650,7 @@ def visio_flight_function(name):
 
         glPushMatrix()
 
-        glTranslatef(pos_x, pos_y, pos_z)
+        glTranslatef(-pos_x, -pos_y, pos_z)
 
         glRotatef(-pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
         glRotatef(-pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
@@ -660,7 +661,7 @@ def visio_flight_function(name):
 
         glPopMatrix()
 
-        traj.append((pos_x, pos_y, pos_z))
+        traj.append((-pos_x, -pos_y, pos_z))
         # draw_trajectory(traj)
 
         pygame.display.flip()
@@ -755,8 +756,6 @@ def visio_calib_function(name):
 
     plt.show()
 
-    pass
-
 def visio_plot_function(name):
     global fig
 
@@ -787,8 +786,6 @@ def visio_plot_function(name):
     ani = animation.FuncAnimation(fig, update_plot_plot, interval=100, blit=True)
 
     plt.show()
-
-    pass
 
 ################################################################################
 

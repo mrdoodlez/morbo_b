@@ -31,13 +31,6 @@ extern "C"
         FlightScenario_Input_DebugPwms,
     } FlightScenario_Input_t;
 
-    typedef struct
-    {
-        float p[FS_NUM_AXIS];
-        float r[FS_NUM_AXIS];
-        float time;
-    } FlightScenario_PAT_t;
-
     typedef enum
     {
         FS_StateFlags_MeasValid = 1 << 0,
@@ -50,9 +43,14 @@ extern "C"
         float time;
         MFX_output_t imu;
 
-        float a[3];
-        float v[3];
-        float p[3];
+        float a[FS_NUM_AXIS];
+        float v[FS_NUM_AXIS];
+        float p[FS_NUM_AXIS];
+
+        float r[FS_NUM_AXIS];
+
+        float e[FS_NUM_AXIS];
+        float thrustN[4];  // [N]
 
         uint32_t flags;
     } FS_State_t;
@@ -68,15 +66,11 @@ extern "C"
 
     FlightScenario_Result_t FlightScenario(ControlOutputs_t *output);
 
-    void FlightScenario_GetPAT(FlightScenario_PAT_t *pat);
-
     void FlightScenario_ResetPos();
 
     void FlightScenario_Init(int algoFreq);
 
-    float FlightScenario_GetAccRma();
-
-    void FlightScenario_GetState(FS_State_t *s);
+    const FS_State_t* FlightScenario_GetState();
 
 #ifdef __cplusplus
 }

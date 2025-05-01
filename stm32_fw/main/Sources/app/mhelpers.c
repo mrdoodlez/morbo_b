@@ -113,24 +113,19 @@ void FS_VecRotQuat(Vec3D_t *x, Quaternion_t *q)
     x->x[2] = q2.z;
 }
 
-static inline float npow(float x, unsigned int n)
-{
-    for (unsigned int i = 1; i < n; i++)
-        x *= x;
-
-    return x;
-}
-
 void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot)
 {
-    if (x < 0.0)
-        x = 0.0;
-    if (x > 1.0)
-        x = 1.0;
+    if (x < 0.0f) x = 0.0f;
+    if (x > 1.0f) x = 1.0f;
 
-    *y = npow(x, 5) * (70 * npow(x, 4) - 315 * npow(x, 3) + 540 * x * x - 420 * x + 126);
-    *yDot = 630 * npow(x, 4) * (npow(x, 4) - 4 * npow(x, 3) + 6 * x * x - 4 * x + 1);
-    *yDotDot = npow(x, 3) * (540 * npow(x, 4) - 17640 * npow(x, 3) + 22680 * x * x - 12600 * x + 2520);
+    float x2 = x * x;
+    float x3 = x2 * x;
+    float x4 = x3 * x;
+    float x5 = x4 * x;
+
+    *y = x5 * (70.0f * x4 - 315.0f * x3 + 540.0f * x2 - 420.0f * x + 126.0f);
+    *yDot = 630.0f * x4 * (x4 - 4.0f * x3 + 6.0f * x2 - 4.0f * x + 1.0f);
+    *yDotDot = x3 * (540.0f * x4 - 17640.0f * x3 + 22680.0f * x2 - 12600.0f * x + 2520.0f);
 }
 
 int FS_SolveLS(uint32_t N, float *A, float *b, float *x)

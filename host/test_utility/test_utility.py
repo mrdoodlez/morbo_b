@@ -144,11 +144,13 @@ MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
 MSG_PAT = 0x0A00
-MSG_ACC = 0x0B00
-MSG_CAL_ACC = 0x0B01
+MSG_ACC = 0x0A01
+MSG_MFX = 0x0A02
+MSG_DST = 0x0A03
+MSG_STB = 0x0A04
 
-MSG_MFX = 0x0B04
-MSG_LAV = 0x0B05
+MSG_CAL_ACC = 0x0B01
+MSG_CAL_GYRO = 0x0B02
 
 MSG_MON = 0x0C00
 
@@ -167,26 +169,18 @@ doExit = False
 
 ################################################################################
 
-# copter position
-
-pos_x = 0.0
-pos_y = 0.0
-pos_z = 0.0
-
-pos_roll = 0.0
-pos_pitch = 0.0
-pos_yaw = 0.0
-
-################################################################################
-
 time_window = 100  # Number of points to keep in the plot
 t_data = list(range(-time_window, 0))
 
-raw_x, raw_y, raw_z = [0] * time_window, [0] * time_window, [0] * time_window
-cal_x, cal_y, cal_z = [0] * time_window, [0] * time_window, [0] * time_window
+acr_x, acr_y, acr_z = [0] * time_window, [0] * time_window, [0] * time_window
+acc_x, acc_y, acc_z = [0] * time_window, [0] * time_window, [0] * time_window
+acw_x, acw_y, acw_z = [0] * time_window, [0] * time_window, [0] * time_window
+acl_x, acl_y, acl_z = [0] * time_window, [0] * time_window, [0] * time_window
 
-lin_x, lin_y, lin_z = [0] * time_window, [0] * time_window, [0] * time_window
-glo_x, glo_y, glo_z = [0] * time_window, [0] * time_window, [0] * time_window
+pos_x, pos_y, pos_z = [0] * time_window, [0] * time_window, [0] * time_window
+roll, pitch, yaw = [0] * time_window, [0] * time_window, [0] * time_window
+
+thrust1, thrust2, thrust3, thrust4 = [0] * time_window, [0] * time_window, [0] * time_window, [0] * time_window
 
 ################################################################################
 
@@ -261,16 +255,27 @@ def handle_acknak(ack, payload):
         ackRx = cmd
 
 def handle_acc(payload):
-    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
-    acc_data = struct.unpack('<6f', b''.join(payload))
+    global acr_x, acr_y, acr_z
+    global acc_x, acc_y, acc_z
+    global acw_x, acw_y, acw_z
 
-    raw_x.append(acc_data[0])
-    raw_y.append(acc_data[1])
-    raw_z.append(acc_data[2])
+    acc_data = struct.unpack('<12f', b''.join(payload))
 
-    cal_x.append(acc_data[3])
-    cal_y.append(acc_data[4])
-    cal_z.append(acc_data[5])
+    acr_x.append(acc_data[0])
+    acr_y.append(acc_data[1])
+    acr_z.append(acc_data[2])
+
+    acc_x.append(acc_data[3])
+    acc_y.append(acc_data[4])
+    acc_z.append(acc_data[5])
+
+    acl_x.append(acc_data[6])
+    acl_y.append(acc_data[7])
+    acl_z.append(acc_data[8])
+
+    acw_x.append(acc_data[9])
+    acw_y.append(acc_data[10])
+    acw_z.append(acc_data[11])
 
     print(acc_data)
 
@@ -282,38 +287,26 @@ def handle_cal_acc(payload):
         ' [', cal_data[9], cal_data[10], cal_data[11], ']')
 
 def handle_pat(payload):
-    global pos_yaw, pos_pitch, pos_roll
+    global yaw, pitch, roll
     global pos_x, pos_y, pos_z
     pat_data = struct.unpack('<7f', b''.join(payload))
-    pos_x = pat_data[0]
-    pos_y = pat_data[1]
-    pos_z = pat_data[2]
-    pos_roll = pat_data[3]
-    pos_pitch = pat_data[4]
-    pos_yaw = pat_data[5]
+
+    pos_x.append(pat_data[0])
+    pos_y.append(pat_data[1])
+    pos_z.append(pat_data[2])
+
+    roll.append(pat_data[3])
+    pitch.append(pat_data[4])
+    yaw.append(pat_data[5])
 
     time = pat_data[6]
 
-    print(time, "(", pos_x, pos_y, pos_z, ")", "(", pos_roll, pos_pitch, pos_yaw, ")")
+    print(time, "(", pos_x[-1], pos_y[-1], pos_z[-1], ")", "(", roll[-1], pitch[-1], yaw[-1], ")")
 
 def handle_mfx(payload):
     mfx_data = struct.unpack('<9f', b''.join(payload))
 
     print(mfx_data[3], mfx_data[4], mfx_data[5], mfx_data[6], mfx_data[7], mfx_data[8])
-
-def handle_lav(payload):
-    global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
-    lav_data = struct.unpack('<10f', b''.join(payload))
-
-    lin_x.append(lav_data[0])
-    lin_y.append(lav_data[1])
-    lin_z.append(lav_data[2])
-
-    glo_x.append(lav_data[3])
-    glo_y.append(lav_data[4])
-    glo_z.append(lav_data[5])
-
-    print("(", lav_data[0], lav_data[1], lav_data[2], ")", "(", lav_data[3], lav_data[4], lav_data[5], ")")
 
 def handle_mon(payload):
     global fLog
@@ -323,6 +316,22 @@ def handle_mon(payload):
     log_str = ' '.join(f'{v:.6f}' for v in mon_data)
     fLog.write("MON: " + log_str + "\n")
 
+def handle_stb(payload):
+    global yaw, pitch, roll
+    global thrust1, thrust2, thrust3, thrust4
+
+    stb_data = struct.unpack('<7f', b''.join(payload))
+
+    roll.append(stb_data[0])
+    pitch.append(stb_data[1])
+    yaw.append(stb_data[2])
+
+    thrust1.append(stb_data[3])
+    thrust2.append(stb_data[4])
+    thrust3.append(stb_data[5])
+    thrust4.append(stb_data[6])
+
+    # print(stb_data)
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -338,10 +347,10 @@ def em_command(msgId, msgPeriod, port):
         msgId = MSG_PAT
     elif msgId == "mfx":
         msgId = MSG_MFX
-    elif msgId == "lav":
-        msgId = MSG_LAV
     elif msgId == "mon":
         msgId = MSG_MON
+    elif msgId == "stb":
+        msgId = MSG_STB
     else:
         print("command not supported")
         return
@@ -434,26 +443,27 @@ def pinger_function(name, port):
 
         time.sleep(1)
 
-
 def console_function(name, port):
     global doExit
     while not doExit:
-        command = input("> ").split()
-        if command[0] == 't':
-            if command[1] == 'e':
-                throttle_enable(True, port)
-            elif command[1] == 'd':
-                throttle_enable(False, port)
-            else:
-                throttle_set(int(command[1]) / 100.0, port)
-        elif command[0] == "em":
-            em_command(command[1], command[2], port)
-        elif command[0] == "wm":
-            wm_command(command[1], command[2], port)
-        elif command[0] == "rp":
-            reset_pos_command(port)
-        if command[0] == 'q':
-            doExit = True
+        command = input("> ")
+        if command != "":
+            command = command.split()
+            if command[0] == 't':
+                if command[1] == 'e':
+                    throttle_enable(True, port)
+                elif command[1] == 'd':
+                    throttle_enable(False, port)
+                else:
+                    throttle_set(int(command[1]) / 100.0, port)
+            elif command[0] == "em":
+                em_command(command[1], command[2], port)
+            elif command[0] == "wm":
+                wm_command(command[1], command[2], port)
+            elif command[0] == "rp":
+                reset_pos_command(port)
+            elif command[0] == 'q':
+                doExit = True
 
 def listener_function(name, port):
     ProtoState_m = 0
@@ -532,10 +542,10 @@ def listener_function(name, port):
                     handle_pat(payload)
                 elif cmd == MSG_MFX:
                     handle_mfx(payload)
-                elif cmd == MSG_LAV:
-                    handle_lav(payload)
                 elif cmd == MSG_MON:
                     handle_mon(payload)
+                elif cmd == MSG_STB:
+                    handle_stb(payload)
                 else:
                     print("unknown message: ", cmd)
 
@@ -669,135 +679,221 @@ def visio_flight_function(name):
 
     pygame.quit()
 
-raw_lines = []
-cal_lines = []
+ani_pose = None
+ani_acc = None
+ani_stb = None
 
-lin_lines = []
-glo_lines = []
+fig_acc = None
+axs_acc = None
 
-fig = None
+lines_acr_acc = None
+lines_acc_acc = None
+lines_acw_acc = None
+lines_acl_acc = None
 
-def update_plot_cal(frame):
-    global raw_x, raw_y, raw_z, cal_x, cal_y, cal_z
-    global doExit
-    global fig
+fig_pose = None
+axs_pose = None
+lines_pos = None
+lines_rpy = None
 
-    if doExit:
-        print("Stopping animation...")
-        plt.close(fig)
-        return
+fig_stb = None
+axs_stb = None
+lines_attitude_stb = None
+lines_thrusts_stb = None
 
-    # Keep only the last 'time_window' points
-    raw_x, raw_y, raw_z = raw_x[-time_window:], raw_y[-time_window:], raw_z[-time_window:]
-    cal_x, cal_y, cal_z = cal_x[-time_window:], cal_y[-time_window:], cal_z[-time_window:]
+def init_acc_plot():
+    global fig_acc, axs_acc, lines_acr_acc, lines_acc_acc, lines_acw_acc, lines_acl_acc
 
-    # Update plots
-    raw_lines[0].set_ydata(raw_x)
-    raw_lines[1].set_ydata(raw_y)
-    raw_lines[2].set_ydata(raw_z)
-    cal_lines[0].set_ydata(cal_x)
-    cal_lines[1].set_ydata(cal_y)
-    cal_lines[2].set_ydata(cal_z)
+    fig_acc, axs_acc = plt.subplots(2, 3, figsize=(12, 6))
+    titles = ['X', 'Y', 'Z']
 
-    return raw_lines + cal_lines
-
-def update_plot_plot(frame):
-    global lin_x, lin_y, lin_z, glo_x, glo_y, glo_z
-    global doExit
-    global fig
-
-    if doExit:
-        print("Stopping animation...")
-        plt.close(fig)
-        return
-
-    # Keep only the last 'time_window' points
-    lin_x, lin_y, lin_z = lin_x[-time_window:], lin_y[-time_window:], lin_z[-time_window:]
-    glo_x, glo_y, glo_z = glo_x[-time_window:], glo_y[-time_window:], glo_z[-time_window:]
-
-    # Update plots
-    lin_lines[0].set_ydata(lin_x)
-    lin_lines[1].set_ydata(lin_y)
-    lin_lines[2].set_ydata(lin_z)
-    glo_lines[0].set_ydata(glo_x)
-    glo_lines[1].set_ydata(glo_y)
-    glo_lines[2].set_ydata(glo_z)
-
-    return lin_lines + glo_lines
-
-def visio_calib_function(name):
-    global fig
-
-    # Create figure and axis
-    fig, ax = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
-
-    # Set labels
-    ax[0].set_ylabel("X Acceleration (g)")
-    ax[1].set_ylabel("Y Acceleration (g)")
-    ax[2].set_ylabel("Z Acceleration (g)")
-    ax[2].set_xlabel("Time (arbitrary units)")
-
-    global raw_lines, cal_lines
-    raw_lines = [ax[i].plot(t_data, [0] * time_window, label="Raw", color='red')[0] for i in range(3)]
-    cal_lines = [ax[i].plot(t_data, [0] * time_window, label="Calibrated", color='blue')[0] for i in range(3)]
+    lines_acr_acc, lines_acc_acc = [], []
+    lines_acw_acc, lines_acl_acc = [], []
 
     for i in range(3):
-        ax[i].set_ylim(-1.5, 1.5)  # Fixed scale for better comparison
-        ax[i].legend(loc="upper right")
-        ax[i].grid(True)
-
-    # Set legends
-    for i in range(3):
-        ax[i].legend(loc="upper right")
-        ax[i].grid(True)
-
-    # Set up animation
-    ani = animation.FuncAnimation(fig, update_plot_cal, interval=100, blit=True)
-
-    plt.show()
-
-def visio_plot_function(name):
-    global fig
-
-    # Create figure and axis
-    fig, ax = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
-
-    # Set labels
-    ax[0].set_ylabel("X Acceleration (g)")
-    ax[1].set_ylabel("Y Acceleration (g)")
-    ax[2].set_ylabel("Z Acceleration (g)")
-    ax[2].set_xlabel("Time (arbitrary units)")
-
-    global lin_lines, glo_lines
-    lin_lines = [ax[i].plot(t_data, [0] * time_window, label="linear", color='red')[0] for i in range(3)]
-    glo_lines = [ax[i].plot(t_data, [0] * time_window, label="world", color='blue')[0] for i in range(3)]
+        ax = axs_acc[0][i]
+        line1, = ax.plot([], [], 'r-', label='Raw')
+        line2, = ax.plot([], [], 'b-', label='Calibrated')
+        lines_acr_acc.append(line1)
+        lines_acc_acc.append(line2)
+        ax.set_ylim(-10, 10)
+        ax.set_title(f'Raw/Calibrated {titles[i]}')
+        ax.legend()
 
     for i in range(3):
-        ax[i].set_ylim(-2, 2)  # Fixed scale for better comparison
-        ax[i].legend(loc="upper right")
-        ax[i].grid(True)
+        ax = axs_acc[1][i]
+        line1, = ax.plot([], [], 'g-', label='World')
+        line2, = ax.plot([], [], 'm-', label='Body')
+        lines_acw_acc.append(line1)
+        lines_acl_acc.append(line2)
+        ax.set_ylim(-10, 10)
+        ax.set_title(f'World/Body {titles[i]}')
+        ax.legend()
 
-    # Set legends
-    for i in range(3):
-        ax[i].legend(loc="upper right")
-        ax[i].grid(True)
+def init_pose_plot():
+    global fig_pose, axs_pose, lines_pos, lines_rpy
 
-    # Set up animation
-    ani = animation.FuncAnimation(fig, update_plot_plot, interval=100, blit=True)
+    fig_pose, axs_pose = plt.subplots(2, 3, figsize=(12, 6))
+    lines_pos, lines_rpy = [], []
 
-    plt.show()
+    for i, name in enumerate(['X', 'Y', 'Z']):
+        ax = axs_pose[0][i]
+        line, = ax.plot([], [], 'c-', label='Pos')
+        lines_pos.append(line)
+        ax.set_ylim(-5, 5)
+        ax.set_title(f'Position {name}')
+        ax.legend()
+
+    for i, name in enumerate(['Roll', 'Pitch', 'Yaw']):
+        ax = axs_pose[1][i]
+        line, = ax.plot([], [], 'y-', label='Rad')
+        lines_rpy.append(line)
+        ax.set_ylim(-4, 4)
+        ax.set_title(name)
+        ax.legend()
+
+def init_stb_plot():
+    global fig_stb, axs_stb, lines_attitude_stb, lines_thrusts_stb
+
+    fig_stb, axs_stb = plt.subplots(3, 3, figsize=(12, 10))
+    lines_attitude_stb = []
+    lines_thrusts_stb = [None] * 4  # One line per motor
+
+    # Row 0: roll, pitch, yaw vs time
+    for i, (title, color, data) in enumerate([
+        ("Roll (rad)", 'r', roll),
+        ("Pitch (rad)", 'g', pitch),
+        ("Yaw (rad)", 'b', yaw)
+    ]):
+        ax = axs_stb[0][i]
+        line, = ax.plot([], [], color + '-', label=title)
+        lines_attitude_stb.append(line)
+        ax.set_ylabel("rad")
+        ax.set_title(title)
+        ax.set_xlim(0, time_window)
+        ax.set_ylim(-3.2, 3.2)
+        ax.legend()
+
+    # Row 1–2: thrusts
+    thrust_titles = ['Thrust #2', 'Thrust #4', 'Thrust #1', 'Thrust #3']
+    thrust_axes = [(1, 0), (1, 1), (2, 0), (2, 1)]
+    thrust_colors = ['m', 'c', 'y', 'k']
+    for i, ((row, col), title, color) in enumerate(zip(thrust_axes, thrust_titles, thrust_colors)):
+        ax = axs_stb[row][col]
+        line, = ax.plot([], [], color + '-', label=title)
+        lines_thrusts_stb[i] = line
+        ax.set_ylabel("N")
+        ax.set_title(title)
+        ax.set_xlim(0, time_window)
+        ax.set_ylim(0, 5)
+        ax.legend()
+
+    # Hide unused subplots
+    axs_stb[1][2].axis('off')
+    axs_stb[2][2].axis('off')
+
+def update_acc(frame):
+    global ani_acc, doExit
+
+    if doExit and ani_acc is not None:
+        ani_acc.event_source.stop()
+        plt.close(fig_acc)
+        return []
+
+    length = len(acr_x)
+    if length < 2:
+        return lines_acr_acc + lines_acc_acc + lines_acw_acc + lines_acl_acc
+
+    start = max(0, length - time_window)
+    x_vals = list(range(length - start))
+
+    # Raw + calibrated
+    for i, (raw, cal) in enumerate(zip(
+        [acr_x, acr_y, acr_z],
+        [acc_x, acc_y, acc_z]
+    )):
+        lines_acr_acc[i].set_data(x_vals, raw[start:])
+        lines_acc_acc[i].set_data(x_vals, cal[start:])
+        axs_acc[0][i].set_xlim(0, len(x_vals))
+
+    # World-frame + linear
+    for i, (world, linear) in enumerate(zip(
+        [acw_x, acw_y, acw_z],
+        [acl_x, acl_y, acl_z]
+    )):
+        lines_acw_acc[i].set_data(x_vals, world[start:])
+        lines_acl_acc[i].set_data(x_vals, linear[start:])
+        axs_acc[1][i].set_xlim(0, len(x_vals))
+
+    return lines_acr_acc + lines_acc_acc + lines_acw_acc + lines_acl_acc
+
+def update_pose(frame):
+    global ani_pose, doExit
+
+    if doExit and ani_pose is not None:
+        ani_pose.event_source.stop()
+        plt.close(fig_pose)
+        return []
+
+    length = len(pos_x)
+    if length < 2:
+        return lines_pos + lines_rpy
+
+    start = max(0, length - time_window)
+    x_vals = list(range(length - start))
+
+    for i, data in enumerate([pos_x, pos_y, pos_z]):
+        lines_pos[i].set_data(x_vals, data[start:])
+        axs_pose[0][i].set_xlim(0, len(x_vals))
+
+    for i, data in enumerate([roll, pitch, yaw]):
+        lines_rpy[i].set_data(x_vals, data[start:])
+        axs_pose[1][i].set_xlim(0, len(x_vals))
+
+    return lines_pos + lines_rpy
+
+def update_stb(frame):
+    global ani_stb, doExit
+
+    if doExit and ani_stb is not None:
+        ani_stb.event_source.stop()
+        plt.close(fig_stb)
+        return []
+
+    length = len(roll)
+    if length < 2:
+        return lines_attitude_stb + lines_thrusts_stb
+
+    start = max(0, length - time_window)
+    x_vals = list(range(length - start))
+
+    # Update roll, pitch, yaw
+    for line, data in zip(lines_attitude_stb, [roll, pitch, yaw]):
+        line.set_data(x_vals, data[start:])
+
+    # Update thrusts
+    for line, data in zip(lines_thrusts_stb, [thrust2, thrust4, thrust1, thrust3]):
+        line.set_data(x_vals, data[start:])
+
+    for ax_row in axs_stb:
+        for ax in ax_row:
+            if ax.has_data():
+                ax.set_xlim(0, len(x_vals))
+
+    return lines_attitude_stb + lines_thrusts_stb
 
 ################################################################################
 
 def main():
     print("Hello boss!")
 
-    global fLog
+    global fLog, ani_acc, ani_pose, ani_stb
+    global doExit
     fLog = open('log.txt', 'w')
 
     port = BLEPort()
 
-    mode = input("mode? ").split()
+    mode = input("mode? ")
 
     #port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.12)
 
@@ -810,14 +906,26 @@ def main():
     console = threading.Thread(target=console_function, args=("console", port.service,))
     console.start()
 
-    if mode[0] == "flight":
+    if mode == "flight":
         visio = threading.Thread(target=visio_flight_function, args=("visio",))
-    elif mode[0] == "cal":
-        visio = threading.Thread(target=visio_calib_function, args=("visio",))
-    elif mode[0] == "plot":
-        visio = threading.Thread(target=visio_plot_function, args=("visio",))
-
-    visio.start()
+        visio.start()
+    elif mode == "plot acc":
+        init_acc_plot()
+        ani_acc = animation.FuncAnimation(fig_acc, update_acc, interval=50, blit=False)
+        plt.tight_layout()
+        plt.show()
+    elif mode == "plot pat":
+        init_pose_plot()
+        ani_pose = animation.FuncAnimation(fig_pose, update_pose, interval=50, blit=False)
+        plt.tight_layout()
+        plt.show()
+    elif mode == "plot stb":
+        init_stb_plot()
+        ani_stb = animation.FuncAnimation(fig_stb, update_stb, interval=50, blit=False)
+        plt.tight_layout()
+        plt.show()
+    else:
+        doExit = True
 
 if __name__ == '__main__':
     main()

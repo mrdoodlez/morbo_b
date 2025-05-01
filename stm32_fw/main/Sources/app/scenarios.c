@@ -11,6 +11,10 @@
 
 #define NUM_ENGINES 4
 
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
+
 static FlightScenario_Result_t Estimate();
 
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
@@ -50,7 +54,6 @@ static struct
     FS_State_t measBuff[FS_NUM_EPOCHS];
     uint8_t epochIdx;
 
-    FlightScenario_PAT_t pat;
     RMA_t accRma;
     float avgA;
 
@@ -59,7 +62,10 @@ static struct
     uint32_t epochCounter;
 
     float pwm[4];
-    float thrustN[4];  // [N]
+
+    float S[FS_NUM_AXIS];
+
+    float initYaw;
 
     int inAir;
 } _copterState;
@@ -73,9 +79,7 @@ extern float gravity;
 inline static float VoltageForThrust(float thrustGramms)
 {
     extern const float motorCalibCoeffs[];
-    return motorCalibCoeffs[0] * thrustGramms * thrustGramms
-        + motorCalibCoeffs[1] * thrustGramms
-        + motorCalibCoeffs[2];
+    return motorCalibCoeffs[0] * thrustGramms * thrustGramms + motorCalibCoeffs[1] * thrustGramms + motorCalibCoeffs[2];
 }
 
 /******************************************************************************/
@@ -85,6 +89,7 @@ void FlightScenario_Init(int algoFreq)
     memset(&_copterState, 0, sizeof(_copterState));
 
     _copterState.accRma.windowSz = 0.5 * algoFreq;
+    _copterState.initYaw = 100500;
     _copterState.isStatic = 1;
 }
 
@@ -151,19 +156,20 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
         }
     }
 
+    FlightScenario_Result_t res = FlightScenario_Result_None;
+
     if (_copterState.scenarios[curr].status == FlightScenarioStatus_Running)
-        return _copterState.scenarios[curr].exec(output);
-
+        res = _copterState.scenarios[curr].exec(output);
     // if we are flying let's not fall
-    if (_copterState.inAir)
-        return FlightScenario_Hover(output);
+    else if (_copterState.inAir)
+        res = FlightScenario_Hover(output);
 
-    return FlightScenario_Result_None;
-}
+    _copterState.epochIdx = (_copterState.epochIdx + 1) % FS_NUM_EPOCHS;
+    _copterState.measBuff[_copterState.epochIdx].flags = 0;
 
-void FlightScenario_GetPAT(FlightScenario_PAT_t *pat)
-{
-    memcpy(pat, &_copterState.pat, sizeof(FlightScenario_PAT_t));
+    _copterState.epochCounter++;
+
+    return res;
 }
 
 void FlightScenario_ResetPos()
@@ -172,17 +178,14 @@ void FlightScenario_ResetPos()
         FS_ZeroVec((Vec3D_t *)&(_copterState.measBuff[i].p));
 }
 
-float FlightScenario_GetAccRma()
+const FS_State_t *FlightScenario_GetState()
 {
-    return _copterState.accRma.val;
-}
-
-void FlightScenario_GetState(FS_State_t *s)
-{
-    *s = _copterState.measBuff[_copterState.epochIdx];
+    return &(_copterState.measBuff[_copterState.epochIdx]);
 }
 
 /******************************************************************************/
+
+#define ROT_THR ((30.0 / 180.0) * PI)
 
 static FlightScenario_Result_t Estimate()
 {
@@ -190,24 +193,44 @@ static FlightScenario_Result_t Estimate()
     {
         uint8_t prevIdx = _copterState.epochIdx == 0 ? 1 : 0;
 
+        // in MFX rotation is returned as yaw, pitch, roll
+
+        if (_copterState.initYaw > 360)
+            _copterState.initYaw = _copterState.measBuff[_copterState.epochIdx].imu.rotation[0];
+
+        _copterState.measBuff[_copterState.epochIdx].r[0] = (_copterState.measBuff[_copterState.epochIdx].imu.rotation[2]) / 180.0 * PI; // roll
+
+        if (_copterState.measBuff[_copterState.epochIdx].imu.rotation[1] < 0)
+            _copterState.measBuff[_copterState.epochIdx].r[1] = (_copterState.measBuff[_copterState.epochIdx].imu.rotation[1] + 180.0) / 180.0 * PI;
+        else
+            _copterState.measBuff[_copterState.epochIdx].r[1] = (_copterState.measBuff[_copterState.epochIdx].imu.rotation[1] - 180.0) / 180.0 * PI;
+
+        _copterState.measBuff[_copterState.epochIdx].r[2] = (_copterState.measBuff[_copterState.epochIdx].imu.rotation[0] - _copterState.initYaw) / 180.0 * PI; // yaw
+
+        if ((fabs(_copterState.measBuff[_copterState.epochIdx].r[0]) > ROT_THR)
+            || (fabs(_copterState.measBuff[_copterState.epochIdx].r[1]) > ROT_THR))
+        {
+            return FlightScenario_Result_Error;
+        }
+
+        Vec3D_t *a = (Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].a;
+        *a = *(Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].imu.linear_acceleration;
+
+        FS_ScaleVec(gravity, a);
+        FS_VecRotQuat(a, (Quaternion_t *)&_copterState.measBuff[_copterState.epochIdx].imu.quaternion);
+
+        float ma = FS_NormVec(a);
+        FS_RmaUpdate(&_copterState.accRma, ma);
+        _copterState.avgA += (ma - _copterState.avgA) / (_copterState.epochCounter + 1);
+
         if ((_copterState.measBuff[prevIdx].flags & FS_StateFlags_MeasValid) == FS_StateFlags_MeasValid)
         {
-            Vec3D_t *a = (Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].a;
-            *a = *(Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].imu.linear_acceleration;
-
-            FS_ScaleVec(gravity, a);
-            FS_VecRotQuat(a, (Quaternion_t *)&_copterState.measBuff[_copterState.epochIdx].imu.quaternion);
-
             Vec3D_t *a_ = (Vec3D_t *)&_copterState.measBuff[prevIdx].a;
 
             float dt = _copterState.measBuff[_copterState.epochIdx].time - _copterState.measBuff[prevIdx].time;
 
             Vec3D_t *v = (Vec3D_t *)&_copterState.measBuff[_copterState.epochIdx].v;
             Vec3D_t *v_ = (Vec3D_t *)&_copterState.measBuff[prevIdx].v;
-
-            float ma = FS_NormVec(a);
-            FS_RmaUpdate(&_copterState.accRma, ma);
-            _copterState.avgA += (ma - _copterState.avgA) / (_copterState.epochCounter + 1);
 
             if (!IsStatic())
                 FS_Integate3D(v, v_, a, a_, dt);
@@ -224,22 +247,9 @@ static FlightScenario_Result_t Estimate()
                 FS_Integate3D(p, p_, v, v_, dt);
 
                 _copterState.measBuff[_copterState.epochIdx].flags |= FS_StateFlags_StateValid;
-
-                memcpy(_copterState.pat.p, p, sizeof(_copterState.pat.p));
-
-                // in MFX rotation is returned as yaw, pitch, roll
-                _copterState.pat.r[0] = _copterState.measBuff[prevIdx].imu.rotation[2]; // roll
-                _copterState.pat.r[1] = _copterState.measBuff[prevIdx].imu.rotation[1]; // pitch
-                _copterState.pat.r[2] = _copterState.measBuff[prevIdx].imu.rotation[0]; // yaw
-                _copterState.pat.time = _copterState.measBuff[_copterState.epochIdx].time;
             }
         }
     }
-
-    _copterState.epochIdx = (_copterState.epochIdx + 1) % FS_NUM_EPOCHS;
-    _copterState.measBuff[_copterState.epochIdx].flags = 0;
-
-    _copterState.epochCounter++;
 
     return FlightScenario_Result_OK;
 }
@@ -250,15 +260,20 @@ static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *output
     return FlightScenario_Result_OK;
 }
 
+extern void __dbg_hook(int arg);
+
 static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *output)
 {
-    static const float LEN_S = 5.0;
+    static const float LEN_S = 1.0;
     uint32_t curr = _copterState.scCounter;
     float runTime = (Controller_GetUS() - _copterState.scenarios[curr].startUs) * 1e-6;
 
     if (runTime > LEN_S)
     {
         _copterState.scenarios[curr].status = FlightScenarioStatus_Finished;
+
+        __dbg_hook(100010);
+
         return FlightScenario_Result_None;
     }
 
@@ -270,12 +285,12 @@ static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *outpu
     float deltaThrust = copterMassKg;
     float totThrust = deltaThrust * sigVal;
     float engThrust = totThrust / NUM_ENGINES;
-    float motorVoltage = VoltageForThrust(engThrust * 1000.0);  // input in gramms
+    float motorVoltage = VoltageForThrust(engThrust * 1000.0); // input in gramms
     float pwm = motorVoltage / Monitor_GetVbat();
     for (int i = 0; i < NUM_ENGINES; i++)
     {
+        _copterState.measBuff[_copterState.epochIdx].thrustN[i] = engThrust * gravity;
         _copterState.pwm[i] = pwm;
-        _copterState.thrustN[i] = engThrust * gravity;
         output->pwm[i] = pwm;
     }
 
@@ -285,39 +300,55 @@ static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *outpu
 }
 
 static const float _thrustMatrix[] = {
-    +1.0, +1.0, +1.0, +1.0,
-    +1.0, +1.0, -1.0, -1.0,
-    -1.0, +1.0, -1.0, +1.0,
-    -1.0, +1.0, +1.0, -1.0,
+    +1.0,
+    +1.0,
+    +1.0,
+    +1.0,
+
+    +1.0,
+    +1.0,
+    -1.0,
+    -1.0,
+
+    -1.0,
+    +1.0,
+    -1.0,
+    +1.0,
+
+    -1.0,
+    +1.0,
+    +1.0,
+    -1.0,
 };
 
-extern void __dbg_hook(int arg);
+#define KP 0.8f
+#define KI 0.02f
 
 static FlightScenario_Result_t FlightScenario_Hover(ControlOutputs_t *output)
 {
     float tgRot[] = {0, 0, 0};
-    float kpRot[] = {1, 1, 1};
-    float inertia[] = {1, 1, 1};
+    float kpRot[] = {KP, KP, 0.0};
+    float kiRot[] = {KI, KI, 0.0};
 
     float b[NUM_ENGINES];
     extern float copterMassKg;
     b[0] = copterMassKg * gravity;
     for (int i = 0; i < FS_NUM_AXIS; i++)
     {
-        b[1 + i] = inertia[i] * (kpRot[i] * (tgRot[i] - _copterState.pat.r[i]) /* + */);
+        _copterState.measBuff[_copterState.epochIdx].e[i] = tgRot[i] - _copterState.measBuff[_copterState.epochIdx].r[i];
+        _copterState.S[i] += _copterState.measBuff[_copterState.epochIdx].e[i];
+        b[1 + i] = kpRot[i] * _copterState.measBuff[_copterState.epochIdx].e[i] + kiRot[i] * _copterState.S[i]; /* + */
     }
 
     float A[NUM_ENGINES * NUM_ENGINES];
     memcpy(A, _thrustMatrix, sizeof(A));
 
     float x[NUM_ENGINES];
-    if (FS_SolveLS(NUM_ENGINES, A, b, x ) == 1)
+    if (FS_SolveLS(NUM_ENGINES, A, b, x) == 1)
     {
-        __dbg_hook(100010);
-
         for (int i = 0; i < NUM_ENGINES; i++)
         {
-            _copterState.thrustN[i] = x[i];
+            _copterState.measBuff[_copterState.epochIdx].thrustN[i] = x[i];
             float engThrustG = x[i] / gravity * 1000.0;
             float motorVoltage = VoltageForThrust(engThrustG);
             float pwm = motorVoltage / Monitor_GetVbat();

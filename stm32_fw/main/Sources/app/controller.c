@@ -85,13 +85,12 @@ static void _Controller_Process(uint8_t newMeas);
 
 static void _Controller_SendMessages();
 
-static void _Controller_SendAccAxes();
+static void _Controller_SendAcc();
 static void _Controller_SendAccCal();
 
 static void _Controller_SendMFX();
-static void _Controller_SendLAV();
-
 static void _Controller_SendPAT();
+static void _Controller_SendSTB();
 
 static void _Controller_SendMon();
 
@@ -106,10 +105,10 @@ struct
 } g_msgPool[] =
     {
         {.msgId = HIP_MSG_PAT, .emit = _Controller_SendPAT},
-        {.msgId = HIP_MSG_ACC, .emit = _Controller_SendAccAxes},
+        {.msgId = HIP_MSG_ACC, .emit = _Controller_SendAcc},
         {.msgId = HIP_MSG_CAL_ACC, .emit = _Controller_SendAccCal},
         {.msgId = HIP_MSG_MFX, .emit = _Controller_SendMFX},
-        {.msgId = HIP_MSG_LAV, .emit = _Controller_SendLAV},
+        {.msgId = HIP_MSG_STB, .emit = _Controller_SendSTB},
         {.msgId = HIP_MSG_MON, .emit = _Controller_SendMon},
 };
 
@@ -426,22 +425,33 @@ void _Controller_SendMessages()
     HostIface_Send();
 }
 
-void _Controller_SendAccAxes()
+void _Controller_SendAcc()
 {
     HIP_Payload_Acc_t acc;
     Vec3D_t raw;
     Vec3D_t cal;
 
     IMU_GetAxes(IMU_Sensor_Acc, &raw, &cal);
-    memcpy(&acc.raw, &raw.x, sizeof(acc.raw));
-    memcpy(&acc.cal, &cal.x, sizeof(acc.cal));
+
+    extern float gravity;
+    FS_ScaleVec(gravity, &raw);
+    FS_ScaleVec(gravity, &cal);
+
+    memcpy(acc.raw, raw.x, sizeof(acc.raw));
+    memcpy(acc.cal, cal.x, sizeof(acc.cal));
+
+    Vec3D_t lin;
+    memcpy(lin.x, g_controllerState.lastMeas.linear_acceleration, sizeof(acc.lin));
+    FS_ScaleVec(gravity, &lin);
+
+    memcpy(acc.lin, lin.x, sizeof(acc.lin));
+    memcpy(acc.wld, FlightScenario_GetState()->a, sizeof(acc.wld));
 
     HostIface_PutData(HIP_MSG_ACC, (uint8_t *)&acc, sizeof(acc));
 }
 
 void _Controller_SendAccCal()
 {
-
     IMU_CalData_t imu;
     uint8_t calStatus;
     IMU_GetCalData(IMU_Sensor_Acc, &imu, &calStatus);
@@ -456,13 +466,12 @@ void _Controller_SendAccCal()
 
 void _Controller_SendPAT()
 {
-    FlightScenario_PAT_t pat;
-    FlightScenario_GetPAT(&pat);
+    const FS_State_t *s = FlightScenario_GetState();
 
     HIP_Payload_PAT_t ppat;
-    memcpy(ppat.position, pat.p, sizeof(ppat.position));
-    memcpy(ppat.rotation, pat.r, sizeof(ppat.rotation));
-    ppat.time = pat.time;
+    memcpy(ppat.position, s->p, sizeof(ppat.position));
+    memcpy(ppat.rotation, s->r, sizeof(ppat.rotation));
+    ppat.time = s->time;
 
     HostIface_PutData(HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
 }
@@ -481,23 +490,15 @@ void _Controller_SendMFX()
     HostIface_PutData(HIP_MSG_MFX, (uint8_t *)&mfx, sizeof(mfx));
 }
 
-void _Controller_SendLAV()
+void _Controller_SendSTB()
 {
-    Vec3D_t la = *(Vec3D_t *)(g_controllerState.lastMeas.linear_acceleration);
-    extern float gravity;
-    FS_ScaleVec(gravity, &la);
+    const FS_State_t *s = FlightScenario_GetState();
 
-    FS_State_t s;
-    FlightScenario_GetState(&s);
+    HIP_Payload_STB_t stb;
+    memcpy(stb.rotation, s->r, sizeof(stb.rotation));
+    memcpy(stb.thrustN, s->thrustN, sizeof(stb.thrustN));
 
-    HIP_Payload_LAV_t lav;
-    memcpy(lav.linear_acceleration, &la, sizeof(lav.linear_acceleration));
-    memcpy(lav.world_acceleration, s.a, sizeof(lav.world_acceleration));
-    memcpy(lav.velocity, s.v, sizeof(lav.velocity));
-
-    lav.accRma = FlightScenario_GetAccRma();
-
-    HostIface_PutData(HIP_MSG_LAV, (uint8_t *)&lav, sizeof(lav));
+    HostIface_PutData(HIP_MSG_STB, (uint8_t *)&stb, sizeof(stb));
 }
 
 void _Controller_SendMon()

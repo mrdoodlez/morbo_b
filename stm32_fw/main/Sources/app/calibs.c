@@ -8,6 +8,6 @@ const float adafruit_lsm6dsox_acc[] = {
 
 const float motorCalibCoeffs[] = {-2.446e-05, 2.915e-02, 2.611};
 
-const float copterMassKg = 300 * 1e-3;//1000 * 1e-3;
+const float copterMassKg = 500 * 1e-3;//1000 * 1e-3;
 
 const float gravity = 9.806;

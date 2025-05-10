@@ -60,9 +60,27 @@ extern "C"
         float pwm[4];
     } ControlOutputs_t;
 
+    typedef struct
+    {
+        struct
+        {
+            float kp;
+            float kd;
+            float ki;
+        } pos;
+        struct
+        {
+            float kp[3];
+            float kd[3];
+            float ki[3];
+        } att;
+    } FS_PID_Koeffs_t;
+
     int FlightScenario_SetScenario(FlightScenario_t s);
 
     int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data);
+
+    int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t* koeffs);
 
     FlightScenario_Result_t FlightScenario(ControlOutputs_t *output);
 

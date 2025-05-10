@@ -10,6 +10,7 @@
 #include "motion_fx.h"
 #include "monitor.h"
 #include "timer.h"
+#include "system.h"
 
 #include <math.h>
 
@@ -80,6 +81,7 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd);
 static void _Controller_HandleEM(const HIP_EM_t *cmd);
 static void _Controller_HandleWM(const HIP_WM_t *cmd);
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd);
+static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd);
 
 static void _Controller_Process(uint8_t newMeas);
 
@@ -298,6 +300,7 @@ void Controller_HandleFatal()
 {
     g_controllerState.mState = MachineState_HardFault;
     EC_Enable(0);
+    System_Reset();
 }
 
 /******************************************************************************/
@@ -326,6 +329,9 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
         break;
     case HIP_MSG_RESET_POS:
         _Controller_HandleResetPos((HIP_ResetPos_t *)cmd);
+        break;
+    case HIP_MSG_SET_PID:
+        _Controller_HandleSetPid((HIP_SetPID_t *)cmd);
         break;
     default:
         _dbg = 1003;
@@ -396,6 +402,19 @@ static void _Controller_HandleWM(const HIP_WM_t *cmd)
     HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 
     _dbg = 2003;
+}
+
+static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd)
+{
+    FS_PID_Koeffs_t pk;
+
+    memcpy(&pk.att, &cmd->payload.att, sizeof(pk.att));
+    memcpy(&pk.pos, &cmd->payload.pos, sizeof(pk.pos));
+
+    FlightScenario_Set_PID_Koeffs(&pk);
+
+    uint16_t cmdA = HIP_MSG_SET_PID;
+    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd)
@@ -522,6 +541,11 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
 
         if ((now - g_controllerState.lastPing) > 2000)
         {
+            if (g_controllerState.mState == MachineState_Armed)
+            {
+                System_Reset();
+            }
+
             g_controllerState.mState = MachineState_Disarmed;
             EC_Enable(0);
         }

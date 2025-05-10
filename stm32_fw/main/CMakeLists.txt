@@ -64,6 +64,7 @@ set (PROJECT_SOURCES
 	Sources/drivers/adc.c
 	Sources/drivers/spi.c
 	Sources/drivers/timer.c
+	Sources/drivers/system.c
 	# Sources/drivers/gpio.c
 	# Sources/drivers/pca9685.c
 	Sources/app/controller.c

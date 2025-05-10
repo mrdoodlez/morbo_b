@@ -23,6 +23,7 @@ extern "C"
 #define HIP_MSG_EM 0x0300
 #define HIP_MSG_WM 0x0400
 #define HIP_MSG_RESET_POS 0x0500
+#define HIP_MSG_SET_PID 0x0600
 
 #define HIP_MSG_PAT 0x0A00
 #define HIP_MSG_ACC 0x0A01
@@ -172,6 +173,29 @@ extern "C"
         HIP_Payload_WM_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_WM_t;
+
+    typedef struct
+    {
+        struct
+        {
+            float kp;
+            float kd;
+            float ki;
+        } pos;
+        struct
+        {
+            float kp[3];
+            float kd[3];
+            float ki[3];
+        } att;
+    } __attribute__((packed)) HIP_Payload_SetPID_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_SetPID_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_SetPID_t;
 
     typedef struct
     {

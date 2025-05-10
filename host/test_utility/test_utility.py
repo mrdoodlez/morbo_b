@@ -140,6 +140,9 @@ LEN_WM = 1 + 1
 CMD_RP = 0x0500
 LEN_RP = 1
 
+CMD_SET_PID = 0x0600
+LEN_SET_PID = (3 + 3 * 3) * 4
+
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
@@ -424,6 +427,35 @@ def reset_pos_command(port):
 
     ackRx = ackAwait = -1
 
+def set_pid_command(port):
+
+    global ackRx, ackAwait
+
+    cmd = CMD_SET_PID
+    len = LEN_SET_PID
+
+    koeffs = [0.0] * 12
+
+    kppr = 2
+    kpyaw = 0.1
+    ki = 0.0
+
+    koeffs[3] = koeffs[4] = kppr
+    koeffs[5] = kpyaw
+    koeffs[9] = koeffs[10] = ki
+
+    sp = struct.pack('<2sHH12fH', b'mb', cmd, len, *koeffs, CRC)
+    port.write(sp)
+
+    ackAwait = CMD_WM
+
+    time.sleep(0.5)
+
+    if ackRx != ackAwait:
+        print("WRN: command not acked")
+
+    ackRx = ackAwait = -1
+
 def pinger_function(name, port):
     global pingSeq
     global doExit
@@ -462,6 +494,8 @@ def console_function(name, port):
                 wm_command(command[1], command[2], port)
             elif command[0] == "rp":
                 reset_pos_command(port)
+            elif command[0] == "sp":
+                set_pid_command(port)
             elif command[0] == 'q':
                 doExit = True
 
@@ -771,7 +805,7 @@ def init_stb_plot():
         ax.set_ylabel("rad")
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(-3.2, 3.2)
+        ax.set_ylim(-5, 5)
         ax.legend()
 
     # Row 1–2: thrusts
@@ -785,7 +819,7 @@ def init_stb_plot():
         ax.set_ylabel("N")
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(0, 5)
+        ax.set_ylim(0, 3)
         ax.legend()
 
     # Hide unused subplots

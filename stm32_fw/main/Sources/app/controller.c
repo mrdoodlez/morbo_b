@@ -515,6 +515,8 @@ void _Controller_SendSTB()
 
     HIP_Payload_STB_t stb;
     memcpy(stb.rotation, s->r, sizeof(stb.rotation));
+    memcpy(stb.omega, s->w, sizeof(stb.omega));
+    memcpy(stb.pid, s->u, sizeof(stb.pid));
     memcpy(stb.thrustN, s->thrustN, sizeof(stb.thrustN));
 
     HostIface_PutData(HIP_MSG_STB, (uint8_t *)&stb, sizeof(stb));

@@ -37,6 +37,7 @@ typedef struct
 void FS_QuatToRot(Matrix3D_t *r, Quaternion_t *q);
 void FS_ConjQuat(Quaternion_t *q_, Quaternion_t *q);
 void FS_QuatMul(Quaternion_t *r, Quaternion_t *q1, Quaternion_t *q2);
+void FS_NormQuat(Quaternion_t *q);
 void FS_VecRotQuat(Vec3D_t *x, Quaternion_t *q);
 void FS_MatMulVec(Vec3D_t *y, Matrix3D_t *yWx, Vec3D_t *x);
 void FS_MatTranspose(Matrix3D_t *r);

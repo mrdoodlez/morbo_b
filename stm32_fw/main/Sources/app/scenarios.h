@@ -48,8 +48,9 @@ extern "C"
         float p[FS_NUM_AXIS];
 
         float r[FS_NUM_AXIS];
+        float w[FS_NUM_AXIS];
 
-        float e[FS_NUM_AXIS];
+        float u[FS_NUM_AXIS];
         float thrustN[4];  // [N]
 
         uint32_t flags;

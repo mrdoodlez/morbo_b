@@ -89,6 +89,15 @@ void FS_ConjQuat(Quaternion_t *q_, Quaternion_t *q)
     q_->z = -q->z;
 }
 
+void FS_NormQuat(Quaternion_t *q)
+{
+    float norm = sqrtf(q->w * q->w + q->x * q->x + q->y * q->y + q->z * q->z);
+    q->w /= norm;
+    q->x /= norm;
+    q->y /= norm;
+    q->z /= norm;
+}
+
 void FS_QuatMul(Quaternion_t *r, Quaternion_t *q1, Quaternion_t *q2)
 {
     r->w = q1->w * q2->w - q1->x * q2->x - q1->y * q2->y - q1->z * q2->z;
@@ -115,8 +124,10 @@ void FS_VecRotQuat(Vec3D_t *x, Quaternion_t *q)
 
 void FS_Sigmoid(float x, float *y, float *yDot, float *yDotDot)
 {
-    if (x < 0.0f) x = 0.0f;
-    if (x > 1.0f) x = 1.0f;
+    if (x < 0.0f)
+        x = 0.0f;
+    if (x > 1.0f)
+        x = 1.0f;
 
     float x2 = x * x;
     float x3 = x2 * x;

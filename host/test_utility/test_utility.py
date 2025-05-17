@@ -182,6 +182,8 @@ acl_x, acl_y, acl_z = [0] * time_window, [0] * time_window, [0] * time_window
 
 pos_x, pos_y, pos_z = [0] * time_window, [0] * time_window, [0] * time_window
 roll, pitch, yaw = [0] * time_window, [0] * time_window, [0] * time_window
+roll_rate, pitch_rate, yaw_rate = [0] * time_window, [0] * time_window, [0] * time_window
+pid_roll, pid_pitch, pid_yaw = [0] * time_window, [0] * time_window, [0] * time_window
 
 thrust1, thrust2, thrust3, thrust4 = [0] * time_window, [0] * time_window, [0] * time_window, [0] * time_window
 
@@ -321,20 +323,34 @@ def handle_mon(payload):
 
 def handle_stb(payload):
     global yaw, pitch, roll
+    global yaw_rate, pitch_rate, roll_rate
+    global pid_roll, pid_pitch, pid_yaw
     global thrust1, thrust2, thrust3, thrust4
 
-    stb_data = struct.unpack('<7f', b''.join(payload))
+    stb_data = struct.unpack('<13f', b''.join(payload))
 
     roll.append(stb_data[0])
     pitch.append(stb_data[1])
     yaw.append(stb_data[2])
 
-    thrust1.append(stb_data[3])
-    thrust2.append(stb_data[4])
-    thrust3.append(stb_data[5])
-    thrust4.append(stb_data[6])
+    roll_rate.append(stb_data[3])
+    pitch_rate.append(stb_data[4])
+    yaw_rate.append(stb_data[5])
 
-    # print(stb_data)
+    pid_roll.append(stb_data[6])
+    pid_pitch.append(stb_data[7])
+    pid_yaw.append(stb_data[8])
+
+    thrust1.append(stb_data[9])
+    thrust2.append(stb_data[10])
+    thrust3.append(stb_data[11])
+    thrust4.append(stb_data[12])
+
+    global fLog
+    log_str = ' '.join(f'{v:.13f}' for v in stb_data)
+    fLog.write("STB: " + log_str + "\n")
+
+    #print(stb_data)
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -436,12 +452,20 @@ def set_pid_command(port):
 
     koeffs = [0.0] * 12
 
-    kppr = 2
-    kpyaw = 0.1
+    kppr = 0.02
+    kpyaw = 0.02
+
     ki = 0.0
+
+    kdpr = 0.2 * kppr
+    kdyaw = 0.2 * kpyaw
 
     koeffs[3] = koeffs[4] = kppr
     koeffs[5] = kpyaw
+
+    koeffs[6] = koeffs[7] = kdpr
+    koeffs[8] = kdyaw
+
     koeffs[9] = koeffs[10] = ki
 
     sp = struct.pack('<2sHH12fH', b'mb', cmd, len, *koeffs, CRC)
@@ -734,6 +758,8 @@ fig_stb = None
 axs_stb = None
 lines_attitude_stb = None
 lines_thrusts_stb = None
+lines_rates_stb = None
+lines_pid_stb = None
 
 def init_acc_plot():
     global fig_acc, axs_acc, lines_acr_acc, lines_acc_acc, lines_acw_acc, lines_acl_acc
@@ -787,10 +813,12 @@ def init_pose_plot():
         ax.legend()
 
 def init_stb_plot():
-    global fig_stb, axs_stb, lines_attitude_stb, lines_thrusts_stb
+    global fig_stb, axs_stb, lines_attitude_stb, lines_rates_stb, lines_thrusts_stb, lines_pid_stb
 
-    fig_stb, axs_stb = plt.subplots(3, 3, figsize=(12, 10))
+    fig_stb, axs_stb = plt.subplots(5, 3, figsize=(12, 14))
     lines_attitude_stb = []
+    lines_rates_stb = []
+    lines_pid_stb = []
     lines_thrusts_stb = [None] * 4  # One line per motor
 
     # Row 0: roll, pitch, yaw vs time
@@ -805,12 +833,46 @@ def init_stb_plot():
         ax.set_ylabel("rad")
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(-5, 5)
+
+        # Set individual y-limits
+        if title.startswith("Yaw"):
+            ax.set_ylim(-4, 4)
+        else:
+            ax.set_ylim(-0.2, 0.2)
+
         ax.legend()
 
-    # Row 1–2: thrusts
+    for i, (title, color, data) in enumerate([
+        ("ω Roll (rad/s)", 'r', roll_rate),
+        ("ω Pitch (rad/s)", 'g', pitch_rate),
+        ("ω Yaw (rad/s)", 'b', yaw_rate)
+    ]):
+        ax = axs_stb[1][i]
+        line, = ax.plot([], [], color + '--', label=title)
+        lines_rates_stb.append(line)
+        ax.set_ylabel("rad/s")
+        ax.set_title(title)
+        ax.set_xlim(0, time_window)
+        ax.set_ylim(-2.0, 2.0)  # or adjust as needed
+        ax.legend()
+
+    for i, (title, color, data) in enumerate([
+        ("PID Roll", 'r', pid_roll),
+        ("PID Pitch", 'g', pid_pitch),
+        ("PID Yaw", 'b', pid_yaw)
+    ]):
+        ax = axs_stb[2][i]
+        line, = ax.plot([], [], color + ':', label=title)
+        lines_pid_stb.append(line)
+        ax.set_ylabel("τ (Nm)")  # or other units
+        ax.set_title(title)
+        ax.set_xlim(0, time_window)
+        ax.set_ylim(-0.5, 0.5)  # adjust as needed
+        ax.legend()
+
+    # Row 2–3: thrusts
     thrust_titles = ['Thrust #2', 'Thrust #4', 'Thrust #1', 'Thrust #3']
-    thrust_axes = [(1, 0), (1, 1), (2, 0), (2, 1)]
+    thrust_axes = [(3, 0), (3, 1), (4, 0), (4, 1)]
     thrust_colors = ['m', 'c', 'y', 'k']
     for i, ((row, col), title, color) in enumerate(zip(thrust_axes, thrust_titles, thrust_colors)):
         ax = axs_stb[row][col]
@@ -819,12 +881,12 @@ def init_stb_plot():
         ax.set_ylabel("N")
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(0, 3)
+        ax.set_ylim(0, 5)
         ax.legend()
 
     # Hide unused subplots
-    axs_stb[1][2].axis('off')
-    axs_stb[2][2].axis('off')
+    axs_stb[3][2].axis('off')
+    axs_stb[4][2].axis('off')
 
 def update_acc(frame):
     global ani_acc, doExit
@@ -905,6 +967,14 @@ def update_stb(frame):
     for line, data in zip(lines_attitude_stb, [roll, pitch, yaw]):
         line.set_data(x_vals, data[start:])
 
+    # Update angular rates
+    for line, data in zip(lines_rates_stb, [roll_rate, pitch_rate, yaw_rate]):
+        line.set_data(x_vals, data[start:])
+
+    # Update PID outputs
+    for line, data in zip(lines_pid_stb, [pid_roll, pid_pitch, pid_yaw]):
+        line.set_data(x_vals, data[start:])
+
     # Update thrusts
     for line, data in zip(lines_thrusts_stb, [thrust2, thrust4, thrust1, thrust3]):
         line.set_data(x_vals, data[start:])
@@ -914,7 +984,7 @@ def update_stb(frame):
             if ax.has_data():
                 ax.set_xlim(0, len(x_vals))
 
-    return lines_attitude_stb + lines_thrusts_stb
+    return lines_attitude_stb + lines_rates_stb + lines_pid_stb + lines_thrusts_stb
 
 ################################################################################
 

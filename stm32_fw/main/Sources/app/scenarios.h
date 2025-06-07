@@ -48,6 +48,7 @@ extern "C"
         float p[FS_NUM_AXIS];
 
         float r[FS_NUM_AXIS];
+        float dr[FS_NUM_AXIS];
         float w[FS_NUM_AXIS];
 
         float u[FS_NUM_AXIS];
@@ -82,6 +83,8 @@ extern "C"
     int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data);
 
     int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t* koeffs);
+
+    int FlightScenario_Set_Mass(float mass);
 
     FlightScenario_Result_t FlightScenario(ControlOutputs_t *output);
 

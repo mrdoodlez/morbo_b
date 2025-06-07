@@ -30,8 +30,8 @@ void EC_SetThrottle(EC_Engine_t engine, float throttle, int init)
     if (throttle > 1.0)
         throttle = 1.0;
 
-    // if (throttle > 0.40) // TODO: remove it!
-    //    throttle = 0.40;
+    if (throttle < 0.10)
+        throttle = 0.0;
 
     float duty = (1.0 + throttle) / _timPerMs;
 

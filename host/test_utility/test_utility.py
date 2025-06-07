@@ -141,7 +141,7 @@ CMD_RP = 0x0500
 LEN_RP = 1
 
 CMD_SET_PID = 0x0600
-LEN_SET_PID = (3 + 3 * 3) * 4
+LEN_SET_PID = (3 * 3 + 1) * 4
 
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
@@ -450,28 +450,32 @@ def set_pid_command(port):
     cmd = CMD_SET_PID
     len = LEN_SET_PID
 
-    koeffs = [0.0] * 12
+    koeffs = [0.0] * 10
 
-    kppr = 0.02
-    kpyaw = 0.02
+    kppr = 0.01
+    kpyaw = 0
 
     ki = 0.0
 
-    kdpr = 0.2 * kppr
+    kdpr = 0.0 * kppr
     kdyaw = 0.2 * kpyaw
 
-    koeffs[3] = koeffs[4] = kppr
-    koeffs[5] = kpyaw
+    mass = 300.0 * 1.0e-3
 
-    koeffs[6] = koeffs[7] = kdpr
-    koeffs[8] = kdyaw
+    koeffs[0] = koeffs[1] = kppr
+    koeffs[2] = kpyaw
 
-    koeffs[9] = koeffs[10] = ki
+    koeffs[3] = koeffs[4] = kdpr
+    koeffs[5] = kdyaw
 
-    sp = struct.pack('<2sHH12fH', b'mb', cmd, len, *koeffs, CRC)
+    koeffs[6] = koeffs[7] = ki
+
+    koeffs[9] = mass
+
+    sp = struct.pack('<2sHH10fH', b'mb', cmd, len, *koeffs, CRC)
     port.write(sp)
 
-    ackAwait = CMD_WM
+    ackAwait = CMD_SET_PID
 
     time.sleep(0.5)
 
@@ -867,7 +871,7 @@ def init_stb_plot():
         ax.set_ylabel("τ (Nm)")  # or other units
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(-0.5, 0.5)  # adjust as needed
+        ax.set_ylim(-0.05, 0.05)  # adjust as needed
         ax.legend()
 
     # Row 2–3: thrusts
@@ -881,7 +885,7 @@ def init_stb_plot():
         ax.set_ylabel("N")
         ax.set_title(title)
         ax.set_xlim(0, time_window)
-        ax.set_ylim(0, 5)
+        ax.set_ylim(0, 2)
         ax.legend()
 
     # Hide unused subplots

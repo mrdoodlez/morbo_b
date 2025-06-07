@@ -407,11 +407,10 @@ static void _Controller_HandleWM(const HIP_WM_t *cmd)
 static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd)
 {
     FS_PID_Koeffs_t pk;
-
     memcpy(&pk.att, &cmd->payload.att, sizeof(pk.att));
-    memcpy(&pk.pos, &cmd->payload.pos, sizeof(pk.pos));
 
     FlightScenario_Set_PID_Koeffs(&pk);
+    FlightScenario_Set_Mass(cmd->payload.mass);
 
     uint16_t cmdA = HIP_MSG_SET_PID;
     HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
@@ -515,7 +514,7 @@ void _Controller_SendSTB()
 
     HIP_Payload_STB_t stb;
     memcpy(stb.rotation, s->r, sizeof(stb.rotation));
-    memcpy(stb.omega, s->w, sizeof(stb.omega));
+    memcpy(stb.rotation_dot, s->dr, sizeof(stb.rotation_dot));
     memcpy(stb.pid, s->u, sizeof(stb.pid));
     memcpy(stb.thrustN, s->thrustN, sizeof(stb.thrustN));
 

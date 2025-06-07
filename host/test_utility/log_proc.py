@@ -73,10 +73,10 @@ def parse_mon_logs_with_thrust(file_path):
     return df
 
 # Example
-df = parse_mon_logs_with_thrust('log.txt')
+df = parse_mon_logs_with_thrust('log_12v.txt')
 print(df[['motor_voltage', 'thrust_grams']].head())
 
-df = parse_mon_logs_with_thrust('log.txt')
+df = parse_mon_logs_with_thrust('log_12v.txt')
 
 # Step 1: Compute average PWM and total motor voltage
 df['pwm_avg'] = df[['pwm1', 'pwm2', 'pwm3', 'pwm4']].mean(axis=1)

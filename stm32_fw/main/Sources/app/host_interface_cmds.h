@@ -116,7 +116,7 @@ extern "C"
     typedef struct
     {
         float rotation[3];
-        float omega[3];
+        float rotation_dot[3];
         float pid[3];
         float thrustN[4];
     } __attribute__((packed)) HIP_Payload_STB_t;
@@ -177,19 +177,14 @@ extern "C"
     } __attribute__((packed)) HIP_WM_t;
 
     typedef struct
-    {
-        struct
-        {
-            float kp;
-            float kd;
-            float ki;
-        } pos;
-        struct
+    {   struct
         {
             float kp[3];
             float kd[3];
             float ki[3];
         } att;
+
+        float mass;
     } __attribute__((packed)) HIP_Payload_SetPID_t;
 
     typedef struct

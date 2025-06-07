@@ -200,3 +200,27 @@ int FS_SolveLS(uint32_t N, float *A, float *b, float *x)
 
     return 1; // Success
 }
+
+void FS_Butterworth2_Init(Butterworth2_t *filt, float b0, float b1, float b2, float a1, float a2)
+{
+    filt->b0 = b0;
+    filt->b1 = b1;
+    filt->b2 = b2;
+    filt->a1 = a1;
+    filt->a2 = a2;
+    filt->x1 = filt->x2 = 0.0f;
+    filt->y1 = filt->y2 = 0.0f;
+}
+
+float FS_Butterworth2_Update(Butterworth2_t *filt, float x)
+{
+    float y = filt->b0 * x + filt->b1 * filt->x1 + filt->b2 * filt->x2 - filt->a1 * filt->y1 - filt->a2 * filt->y2;
+
+    filt->x2 = filt->x1;
+    filt->x1 = x;
+
+    filt->y2 = filt->y1;
+    filt->y1 = y;
+
+    return y;
+}

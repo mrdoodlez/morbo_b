@@ -1,6 +1,7 @@
 #include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "timers.h"
 #include "queue.h"
 #include "host_interface.h"
 #include "host_interface_cmds.h"
@@ -8,8 +9,8 @@
 #include "engine_control.h"
 #include "scenarios.h"
 #include "motion_fx.h"
-#include "monitor.h"
-#include "timer.h"
+// #include "monitor.h"
+// #include "timer.h"
 #include "system.h"
 
 #include <math.h>
@@ -34,6 +35,7 @@ typedef enum
 
 typedef enum
 {
+    ControllerMessageType_Dummy,
     ControllerMessageType_Meas,
     ControllerMessageType_Cmd,
 } ControllerMessageType_t;
@@ -45,6 +47,7 @@ typedef struct
     {
         MFX_output_t mdiData;
         HIP_Cmd_t cmd;
+        uint32_t dummy;
     } msgContent;
 
 } ControllerMessage_t;
@@ -83,7 +86,7 @@ static void _Controller_HandleWM(const HIP_WM_t *cmd);
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd);
 static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd);
 
-static void _Controller_Process(uint8_t newMeas);
+static void _Controller_Process();
 
 static void _Controller_SendMessages();
 
@@ -136,6 +139,17 @@ static void _Sender_Task();
 
 /******************************************************************************/
 
+#define TIMER_FREQ FUSION_FREQ
+#define TIMER_PERIOD (1000 / FUSION_FREQ)
+
+static TimerHandle_t msxTimer;
+static StaticTimer_t msxTmrBuffer;
+
+static void MSX_Process(TimerHandle_t xTimer);
+
+/******************************************************************************/
+
+
 void Controller_Task()
 {
     vTaskDelay(1000);
@@ -162,23 +176,34 @@ void Controller_Task()
         // TODO: handle error
     }
 
-    int rc = HostIface_Start();
+    if ((msxTimer = xTimerCreateStatic("MSX", pdMS_TO_TICKS(TIMER_PERIOD),
+                                       pdTRUE, (void *)0, MSX_Process, &msxTmrBuffer)) == NULL)
+    {
+        ; // TODO: handle error
+    }
+
+    int rc = EC_Init(EC_BUS);
     if (rc)
     {
         // TODO: handle error
     }
 
-    rc = EC_Init(EC_BUS);
+    rc = HostIface_Start();
     if (rc)
     {
         // TODO: handle error
     }
 
-    IMU_Init(IMU_BUS);
+    // IMU_Init(IMU_BUS);
 
-    IMU_SetMode(IMU_Mode_Fusion); // TODO: comment it!
+    // IMU_SetMode(IMU_Mode_Fusion); // TODO: comment it!
 
     FlightScenario_Init(FUSION_FREQ);
+
+    if (xTimerStart(msxTimer, 0) != pdPASS)
+    {
+        // TODO: handle error
+    }
 
     ControllerMessage_t msg;
 
@@ -189,46 +214,41 @@ void Controller_Task()
         {
             switch (msg.type)
             {
+            case ControllerMessageType_Dummy:
             case ControllerMessageType_Meas:
                 _Controller_ProcessNewMeas(&msg.msgContent.mdiData);
+                _Controller_Process();
                 break;
             case ControllerMessageType_Cmd:
                 _Controller_ProcessCommand(&msg.msgContent.cmd);
             default:
                 break;
             }
-
-            _Controller_Process(msg.type == ControllerMessageType_Meas);
         }
     }
 }
 
 /******************************************************************************/
 
-static void _Controller_Process(uint8_t newMeas)
+static void _Controller_Process()
 {
     static MachineState_t prevState = MachineState_Disarmed;
 
+    /*
     Monitor_Update();
 
     g_controllerState.vbat = Monitor_GetVbat();
     g_controllerState.ch1 = Monitor_GetCh1();
+    */
 
     g_controllerState.rt = Controller_GetUS();
 
     if ((prevState == MachineState_Disarmed)
         && (g_controllerState.mState == MachineState_Armed))
     {
-        EC_Enable(0);
-
-        for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
-        {
-            EC_SetThrottle(en, 0, 1);
-        }
-
         EC_Enable(1);
     }
-    else if ((g_controllerState.mState == MachineState_Armed) && (newMeas != 0))
+    else if (g_controllerState.mState == MachineState_Armed)
     {
         struct
         {
@@ -246,10 +266,10 @@ static void _Controller_Process(uint8_t newMeas)
 
         if (fcRes == FlightScenario_Result_OK)
         {
-            for (int en = EC_Engine_1; en <= EC_Engine_4; en++)
+            for (int en = EC_Engine_1; en <= EC_Engine_2; en++)
             {
                 g_controllerState.pwm[en] = output.pwm[en];
-                EC_SetThrottle(en, g_controllerState.pwm[en], 0);
+                EC_SetThrottle(en, g_controllerState.pwm[en]);
             }
         }
         else if (fcRes == FlightScenario_Result_Error)
@@ -263,6 +283,14 @@ static void _Controller_Process(uint8_t newMeas)
     }
 
     prevState = g_controllerState.mState;
+}
+
+/******************************************************************************/
+
+static void MSX_Process(TimerHandle_t xTimer)
+{
+    static uint32_t cnt = 0;
+    Controller_NewDummy(cnt++);
 }
 
 /******************************************************************************/
@@ -292,6 +320,15 @@ void Controller_NewCommand(const HIP_Cmd_t *cmd)
     ControllerMessage_t msg;
     msg.type = ControllerMessageType_Cmd;
     msg.msgContent.cmd = *cmd;
+
+    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
+}
+
+void Controller_NewDummy(uint32_t dummy)
+{
+    ControllerMessage_t msg;
+    msg.type = ControllerMessageType_Dummy;
+    msg.msgContent.dummy = dummy;
 
     xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
 }
@@ -395,7 +432,7 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd)
 
 static void _Controller_HandleWM(const HIP_WM_t *cmd)
 {
-    IMU_SetMode(cmd->payload.imuMode);
+    // IMU_SetMode(cmd->payload.imuMode);
     FlightScenario_SetScenario(cmd->payload.fcMode);
 
     uint16_t cmdA = HIP_MSG_WM;
@@ -445,6 +482,7 @@ void _Controller_SendMessages()
 
 void _Controller_SendAcc()
 {
+    /*
     HIP_Payload_Acc_t acc;
     Vec3D_t raw;
     Vec3D_t cal;
@@ -466,10 +504,12 @@ void _Controller_SendAcc()
     memcpy(acc.wld, FlightScenario_GetState()->a, sizeof(acc.wld));
 
     HostIface_PutData(HIP_MSG_ACC, (uint8_t *)&acc, sizeof(acc));
+    */
 }
 
 void _Controller_SendAccCal()
 {
+    /*
     IMU_CalData_t imu;
     uint8_t calStatus;
     IMU_GetCalData(IMU_Sensor_Acc, &imu, &calStatus);
@@ -480,6 +520,7 @@ void _Controller_SendAccCal()
     cal.flags = calStatus;
 
     HostIface_PutData(HIP_MSG_CAL_ACC, (uint8_t *)&cal, sizeof(cal));
+    */
 }
 
 void _Controller_SendPAT()
@@ -544,7 +585,7 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
         {
             if (g_controllerState.mState == MachineState_Armed)
             {
-                System_Reset();
+                // System_Reset();
             }
 
             g_controllerState.mState = MachineState_Disarmed;
@@ -559,5 +600,5 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
 
 uint64_t Controller_GetUS()
 {
-    return Timer_GetRuntime(1);
+    return xTaskGetTickCount() * 1000ULL;
 }

@@ -5,8 +5,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define HIP_SERIAL 0
-
 #define HIP_STACK_SIZE 1024
 #define HIP_TX_SIZE 1024
 

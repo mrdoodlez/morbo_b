@@ -16,6 +16,8 @@ void Controller_NewMeas(const MFX_output_t *mdiData);
 
 void Controller_NewCommand(const HIP_Cmd_t* cmd);
 
+void Controller_NewDummy(uint32_t dummy);
+
 void Controller_HandleFatal();
 
 uint64_t Controller_GetUS();

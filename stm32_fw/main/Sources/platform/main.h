@@ -46,8 +46,9 @@ extern "C"
 #define ADC_DEV 1
 #define TIM_DEV 1
 #define EC_BUS TIM_DEV
+#define HIP_SERIAL 1
 
-#define FUSION_FREQ 250
+#define FUSION_FREQ 50
 #define CALIB_FREQ 50
 
 #ifdef __cplusplus

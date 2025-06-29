@@ -86,9 +86,6 @@ static MAC_knobs_t Knobs;
 #define MFX_STATE_SIZE (size_t)(2432)
 static uint8_t mfxstate[MFX_STATE_SIZE];
 
-static TimerHandle_t imuTimer;
-static StaticTimer_t imuTmrBuffer;
-
 /******************************************************************************/
 
 extern int _dbg;
@@ -176,10 +173,6 @@ void IMU_Init(uint8_t spiDev)
     /* OPTIONAL */
     /* Get library version */
     MotionAC_manager_get_version(g_IMU_State.acLibVersion, &libVersionLen);
-
-    if ((imuTimer = xTimerCreateStatic("IMU", pdMS_TO_TICKS(TIMER_PERIOD),
-                                       pdTRUE, (void *)0, IMU_Process, &imuTmrBuffer)) == NULL)
-        ; // TODO: handle error
 
     if (xTimerStart(imuTimer, 0) != pdPASS)
         ; // TODO: handle error

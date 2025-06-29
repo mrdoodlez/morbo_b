@@ -16,13 +16,7 @@
 #endif
 
 static FlightScenario_Result_t Estimate();
-
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
-static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *);
-
-static FlightScenario_Result_t FlightScenario_Hover(ControlOutputs_t *output);
-
-static FlightScenario_Result_t Allocate(ControlOutputs_t *output, float totalThrust);
 
 typedef enum
 {
@@ -45,7 +39,6 @@ FlightScenarioFunc_t _execs[FlightScenario_Total] =
     {
         NULL,
         FlightScenarioFunc_Debug,
-        FlightScenarioFunc_Windup,
 };
 
 static struct
@@ -221,9 +214,6 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
 
     if (_copterState.scenarios[curr].status == FlightScenarioStatus_Running)
         res = _copterState.scenarios[curr].exec(output);
-    // if we are flying let's not fall
-    else if (_copterState.inAir)
-        res = FlightScenario_Hover(output);
 
     _copterState.epochIdx = (_copterState.epochIdx + 1) % FS_NUM_EPOCHS;
     _copterState.measBuff[_copterState.epochIdx].flags = 0;
@@ -250,6 +240,8 @@ const FS_State_t *FlightScenario_GetState()
 
 static FlightScenario_Result_t Estimate()
 {
+    return FlightScenario_Result_OK;
+
     if ((_copterState.measBuff[_copterState.epochIdx].flags & FS_StateFlags_MeasValid) == FS_StateFlags_MeasValid)
     {
         uint8_t prevIdx = _copterState.epochIdx == 0 ? 1 : 0;
@@ -369,104 +361,6 @@ static FlightScenario_Result_t Estimate()
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *output)
 {
     memcpy(output->pwm, _copterState.pwm, sizeof(_copterState.pwm));
-    return FlightScenario_Result_OK;
-}
-
-extern void __dbg_hook(int arg);
-
-static FlightScenario_Result_t FlightScenarioFunc_Windup(ControlOutputs_t *output)
-{
-    static const float LEN_S = 20.0;
-    uint32_t curr = _copterState.scCounter;
-    float runTime = (Controller_GetUS() - _copterState.scenarios[curr].startUs) * 1e-6;
-
-    if (runTime < 0.1)
-        _copterState.wuYaw = _copterState.measBuff[_copterState.epochIdx].r[2];
-
-    if (runTime > LEN_S)
-    {
-        _copterState.scenarios[curr].status = FlightScenarioStatus_Finished;
-
-        __dbg_hook(100010);
-
-        return FlightScenario_Result_None;
-    }
-
-    float ratio = runTime / LEN_S;
-    float sigVal, sigValDot, sigValDotDot;
-    FS_Sigmoid(ratio, &sigVal, &sigValDot, &sigValDotDot);
-
-    float deltaThrust = _copterState.massKg;
-    float totThrust = deltaThrust * sigVal;
-
-    _copterState.inAir = 1;
-
-    return Allocate(output, totThrust * gravity);
-}
-
-static FlightScenario_Result_t FlightScenario_Hover(ControlOutputs_t *output)
-{
-    return Allocate(output, _copterState.massKg * gravity);
-}
-
-static FlightScenario_Result_t Allocate(ControlOutputs_t *output, float totalThrust)
-{
-    float tgRot[] = {0, 0, _copterState.wuYaw};
-
-    for (int i = 0; i < FS_NUM_AXIS; i++)
-    {
-        float e = tgRot[i] - _copterState.measBuff[_copterState.epochIdx].r[i];
-        _copterState.S[i] += e;
-        _copterState.measBuff[_copterState.epochIdx].u[i] =
-            _copterState.kPid.att.kp[i] * e
-          - _copterState.kPid.att.kd[i] * _copterState.measBuff[_copterState.epochIdx].dr[i]
-          + _copterState.kPid.att.ki[i] * _copterState.S[i];
-    }
-
-    extern float kL, kY;
-    _copterState.measBuff[_copterState.epochIdx].u[0] *= kL;
-    _copterState.measBuff[_copterState.epochIdx].u[1] *= kL;
-    _copterState.measBuff[_copterState.epochIdx].u[2] *= kY;
-
-    float ff = 0.25 * totalThrust;
-    float fb[NUM_ENGINES] = {0.0, 0.0, 0.0, 0.0};
-
-    fb[0] = _copterState.measBuff[_copterState.epochIdx].u[0]
-          - _copterState.measBuff[_copterState.epochIdx].u[1]
-          + _copterState.measBuff[_copterState.epochIdx].u[2];
-
-    fb[1] = _copterState.measBuff[_copterState.epochIdx].u[0]
-          + _copterState.measBuff[_copterState.epochIdx].u[1]
-          - _copterState.measBuff[_copterState.epochIdx].u[2];
-
-    fb[2] = -_copterState.measBuff[_copterState.epochIdx].u[0]
-           - _copterState.measBuff[_copterState.epochIdx].u[1]
-           - _copterState.measBuff[_copterState.epochIdx].u[2];
-
-    fb[3] = -_copterState.measBuff[_copterState.epochIdx].u[0]
-           + _copterState.measBuff[_copterState.epochIdx].u[1]
-           + _copterState.measBuff[_copterState.epochIdx].u[2];
-
-    // _copterState.measBuff[_copterState.epochIdx].thrustN[0] = 0.25 * totalThrust
-
-    for (int i = 0; i < NUM_ENGINES; i++)
-    {
-        if (fb[i] > 0.2 * ff)
-            fb[i] = 0.2 * ff;
-
-        if (fb[i] < -0.2 * ff)
-            fb[i] = -0.2 * ff;
-
-        _copterState.measBuff[_copterState.epochIdx].thrustN[i] = ff + fb[i];
-
-        float engThrustG = _copterState.measBuff[_copterState.epochIdx].thrustN[i] / gravity * 1000.0;
-        float motorVoltage = VoltageForThrust(engThrustG);
-        float pwm = motorVoltage / Monitor_GetVbat();
-
-        _copterState.pwm[i] = pwm;
-        output->pwm[i] = pwm;
-    }
-
     return FlightScenario_Result_OK;
 }
 

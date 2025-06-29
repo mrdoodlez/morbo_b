@@ -5,58 +5,60 @@ import math
 from scipy.optimize import fsolve
 import pandas as pd
 
-# Параметры
-m = 2  # модуль
-z_motor = 13
-z_stage1 = 100
-z_stage2 = 14
-z_out = 91
+# Updated gear parameters
+m = 2  # module
 
-# Функции расчёта геометрии шестерён
+# New tooth counts
+z_motor = 13
+z_stage1 = 70
+z_stage2 = 13
+z_out = 70
+
+# Geometry calculation function
 def gear_dims(z, m):
     d = m * z
     da = d + 2 * m
     df = d - 2.5 * m
     return round(d, 2), round(da, 2), round(df, 2)
 
-# Размеры
+# Recalculate dimensions
 motor_d, motor_da, motor_df = gear_dims(z_motor, m)
 stage1_d, stage1_da, stage1_df = gear_dims(z_stage1, m)
 stage2_d, stage2_da, stage2_df = gear_dims(z_stage2, m)
 out_d, out_da, out_df = gear_dims(z_out, m)
 
-# Межосевые расстояния
+# Recalculate center distances
 a_motor_stage1 = (motor_d + stage1_d) / 2
 a_stage1_out = (stage2_d + out_d) / 2
 
 R1 = a_motor_stage1
 R2 = a_stage1_out
 
-# Решение планиметрии
+# Solve planimetry
 def solve_planimetry(y_out_input):
     def equations(vars):
         x_out, x_i, y_i = vars
         eq1 = (x_i - 0)**2 + (y_i - 0)**2 - R1**2
         eq2 = (x_i - x_out)**2 + (y_i - y_out_input)**2 - R2**2
-        eq3 = x_out - 100
+        eq3 = 0  # no constraint
         return [eq1, eq2, eq3]
 
-    initial_guess = [200, R1 / 2, -R1 / 2]
+    initial_guess = [150, R1 / 2, -R1 / 2]
     solution = fsolve(equations, initial_guess)
     x_out_sol, x_i_sol, y_i_sol = solution
 
     res = equations(solution)
     if max(abs(r) for r in res[:2]) > 1e-3:
-        return None, "⚠️ Нет точного решения"
+        return None, "⚠️ No accurate solution"
 
     coords = {
         'Motor': (0.0, 0.0),
         'Intermediate': (round(x_i_sol, 2), round(y_i_sol, 2)),
         'Output': (round(x_out_sol, 2), round(y_out_input, 2))
     }
-    return coords, "✅ Решение найдено"
+    return coords, "✅ Solution found"
 
-# Функция для отрисовки
+# Function to draw layout and print table
 def solve_and_draw(y_out_input):
     coords_planimetry, result_text = solve_planimetry(y_out_input)
 
@@ -83,11 +85,11 @@ def solve_and_draw(y_out_input):
     ax.set_xlim(-100, 350)
     ax.set_ylim(-300, 150)
     plt.grid(True)
-    plt.title(f"Gearbox layout — full planimetry\ny_out = {y_out_input} mm\n{result_text}")
+    plt.title(f"Gearbox layout — updated gear set\ny_out = {y_out_input} mm\n{result_text}")
 
     plt.show()
 
-    # Таблица параметров + координат
+    # Gear spec + coordinates
     if coords_planimetry:
         df_dims = pd.DataFrame([
             ['Motor', z_motor, motor_d, motor_da, motor_df, coords_planimetry['Motor'][0], coords_planimetry['Motor'][1]],
@@ -98,6 +100,6 @@ def solve_and_draw(y_out_input):
 
         print(df_dims)
 
+# Example call
 if __name__ == "__main__":
-    # Вызов функции с нужным параметром
-    solve_and_draw(-170)
+    solve_and_draw(-100)

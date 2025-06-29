@@ -39,16 +39,15 @@ set (MEMS_DIR                         "/media/stanislav/projects/projects/X-CUBE
 #######################################################################
 
 ###################### VARIABLES ######################################
-set (PROJECT_NAME             "morbo_a")
+set (PROJECT_NAME             "morbo_b")
 set (PROJECT_TYPE             "exe")
-set (LINKER_SCRIPT            "../STM32G474RETX_FLASH.ld")
+set (LINKER_SCRIPT            "../STM32G431KBTX_FLASH.ld")
 set (MCPU                     "-mcpu=Cortex-M4")
 set (MFPU                     "-mfpu=fpv4-sp-d16")
 set (MFLOAT_ABI               "-mfloat-abi=hard")
 set (RUNTIME_LIBRARY          "--specs=nano.specs")
 set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
 set (MFX_LIB                   ${MEMS_DIR}/Middlewares/ST/STM32_MotionFX_Library/Lib/MotionFX_CM4F_wc32_ot_hard.a)
-set (MAC_LIB                   ${MEMS_DIR}/Middlewares/ST/STM32_MotionAC_Library/Lib/MotionAC_CM4F_wc32_ot_hard.a)
 
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
@@ -60,17 +59,17 @@ set (PROJECT_SOURCES
 	Sources/platform/system_stm32g4xx.c
 	Sources/platform/stm32g4xx_hal_msp.c
 	Sources/drivers/serial.c
-	# Sources/drivers/i2c.c
-	Sources/drivers/adc.c
-	Sources/drivers/spi.c
-	Sources/drivers/timer.c
+	Sources/drivers/i2c.c
+	# Sources/drivers/adc.c
+	# Sources/drivers/spi.c
+	# Sources/drivers/timer.c
 	Sources/drivers/system.c
-	# Sources/drivers/gpio.c
-	# Sources/drivers/pca9685.c
+	Sources/drivers/gpio.c
+	Sources/drivers/pca9685.c
 	Sources/app/controller.c
-	Sources/app/monitor.c
+	# Sources/app/monitor.c
 	Sources/app/host_interface.c
-	Sources/app/imu_reader.c
+	# Sources/app/imu_reader.c
 	Sources/app/mhelpers.c
 	Sources/app/engine_control.c
 	Sources/app/scenarios.c
@@ -84,18 +83,18 @@ set (PROJECT_SOURCES
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_rcc_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_uart.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_uart_ex.c
-	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_i2c.c
-	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_i2c_ex.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_spi.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_spi_ex.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_i2c.c
+	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_i2c_ex.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_spi.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_spi_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_dma_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_crc_ex.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc_ex.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_tim.c
-	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_tim_ex.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_adc_ex.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_tim.c
+	# ${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_tim_ex.c
 	${CUBE_DIR}/Drivers/STM32G4xx_HAL_Driver/Src/stm32g4xx_hal_exti.c
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo/stm32g4xx_nucleo.c
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F/port.c	
@@ -141,7 +140,7 @@ enable_language(ASM)
 if (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_EXECUTABLE})
   add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
   add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>)
-  target_link_libraries(${PROJECT_NAME} ${MFX_LIB} ${MAC_LIB})
+  target_link_libraries(${PROJECT_NAME} ${MFX_LIB})
 elseif (${PROJECT_TYPE} MATCHES ${PROJECT_TYPE_STATIC_LIBRARY})
   add_library(${PROJECT_NAME} ${PROJECT_SOURCES})
 endif()
@@ -151,6 +150,6 @@ include_directories (${PROJECT_INCLUDES})
 
 set (CMAKE_EXECUTABLE_SUFFIX ".elf")
 set (CMAKE_STATIC_LIBRARY_SUFFIX ".a")
-set (CMAKE_C_FLAGS "${MCPU} -std=gnu11 ${MFPU} ${MFLOAT_ABI} ${RUNTIME_LIBRARY} -DSTM32G474xx -DUSE_HAL_DRIVER -DUSE_NUCLEO_64 -O2 -mthumb -Wall -Werror")
+set (CMAKE_C_FLAGS "${MCPU} -std=gnu11 ${MFPU} ${MFLOAT_ABI} ${RUNTIME_LIBRARY} -DSTM32G431xx -DUSE_HAL_DRIVER -DUSE_STM32G4XX_NUCLEO_32 -DUSE_NUCLEO_32 -Os -mthumb -Wall -Werror")
 set (CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} ${RUNTIME_LIBRARY_SYSCALLS} -Wl,-Map=test.map -Wl,--gc-sections -static -Wl,--start-group -lc -lm -Wl,--end-group")
 set (CMAKE_ASM_FLAGS "${CMAKE_C_FLAGS} -x assembler-with-cpp")

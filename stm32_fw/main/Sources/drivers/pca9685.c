@@ -45,6 +45,8 @@
 #define PCA9685_PRESCALE_MIN 3   /**< minimum prescale value */
 #define PCA9685_PRESCALE_MAX 255 /**< maximum prescale value */
 
+#define PCA9685_NUM_CHANNELS 16
+
 /******************************************************************************/
 
 static struct
@@ -52,6 +54,8 @@ static struct
     uint8_t i2cAddr;
     uint8_t i2c;
     uint32_t oscillator_freq;
+
+    uint16_t us[PCA9685_NUM_CHANNELS];
 } _ctx;
 
 /******************************************************************************/
@@ -311,6 +315,9 @@ void PCA9685_SetPin(uint8_t num, uint16_t val, uint8_t invert)
  */
 void PCA9685_WriteMicroseconds(uint8_t num, uint16_t Microseconds)
 {
+    if (_ctx.us[num] == Microseconds)
+        return;
+
     double pulse = Microseconds;
     double pulselength;
     pulselength = 1000000; // 1,000,000 us per second
@@ -327,6 +334,8 @@ void PCA9685_WriteMicroseconds(uint8_t num, uint16_t Microseconds)
     pulse /= pulselength;
 
     PCA9685_SetPWM(num, 0, pulse);
+
+    _ctx.us[num] = Microseconds;
 }
 
 /*!

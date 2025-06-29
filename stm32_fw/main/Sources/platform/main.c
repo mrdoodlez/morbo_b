@@ -52,17 +52,17 @@ int main(void)
     /* Ensure all priority bits are assigned as preemption priority bits. */
     HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
-    Serial_Init(0);
+    Serial_Init(1);
 
-    SPI_Init(1);
+    // SPI_Init(1);
 
-    // I2C_Init(1);
+    I2C_Init(1);
 
-    // GPIO_Init();
+    GPIO_Init();
 
-    ADC_Init(1);
+    // ADC_Init(1);
 
-    Timer_Init(1);
+    // Timer_Init(1);
 
     xTaskCreateStatic((TaskFunction_t)Controller_Task,
                       (const char *)"MAIN", MAIN_STACK_SIZE / sizeof(StackType_t),

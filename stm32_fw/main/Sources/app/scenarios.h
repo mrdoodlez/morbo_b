@@ -13,7 +13,6 @@ extern "C"
     {
         FlightScenario_None,
         FlightScenario_Debug,
-        FlightScenario_Windup,
 
         FlightScenario_Total,
     } FlightScenario_t;

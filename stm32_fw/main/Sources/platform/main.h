@@ -48,6 +48,9 @@ extern "C"
 #define EC_BUS TIM_DEV
 #define HIP_SERIAL 1
 
+#define TIM_DEV_L 2
+#define TIM_DEV_R 4
+
 #define FUSION_FREQ 50
 #define CALIB_FREQ 50
 

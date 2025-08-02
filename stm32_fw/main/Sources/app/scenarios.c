@@ -147,20 +147,14 @@ int FlightScenario_SetScenario(FlightScenario_t s)
     return 0;
 }
 
-int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data)
+int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
 {
     if (type == FlightScenario_Input_Meas)
     {
-        struct
-        {
-            uint64_t usec;
-            MFX_output_t meas;
-        } meas;
+        FS_Meas_t *meas = (FS_Meas_t*)data;
 
-        memcpy((void *)&meas, data, sizeof(meas));
-
-        _copterState.measBuff[_copterState.epochIdx].imu = meas.meas;
-        _copterState.measBuff[_copterState.epochIdx].time = meas.usec * 1.0e-6;
+        //_copterState.measBuff[_copterState.epochIdx].imu = meas.meas;
+        _copterState.measBuff[_copterState.epochIdx].time = meas->us * 1.0e-6;
 
         _copterState.measBuff[_copterState.epochIdx].flags |= FS_StateFlags_MeasValid;
     }

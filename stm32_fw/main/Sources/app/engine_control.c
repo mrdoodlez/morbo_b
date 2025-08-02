@@ -20,9 +20,10 @@ int EC_Init(int i2cDev)
 {
     _i2cDev = i2cDev;
 
-    GPIO_Set(GPIO_Channel_0, 1);
+    GPIO_Set(GPIO_Channel_0, 0);
 
     PCA9685_Init(_i2cDev, PCA9685_ADDR, 0);
+
     PCA9685_SetPWMFreq(PWM_FREQ);
 
     for (int ch = 0; ch < PWM_CHANNELS; ch++)

@@ -10,7 +10,7 @@
 #include "scenarios.h"
 #include "motion_fx.h"
 // #include "monitor.h"
-// #include "timer.h"
+#include "timer_ext.h"
 #include "system.h"
 
 #include <math.h>
@@ -35,7 +35,6 @@ typedef enum
 
 typedef enum
 {
-    ControllerMessageType_Dummy,
     ControllerMessageType_Meas,
     ControllerMessageType_Cmd,
 } ControllerMessageType_t;
@@ -45,7 +44,7 @@ typedef struct
     ControllerMessageType_t type;
     union
     {
-        MFX_output_t mdiData;
+        FS_Meas_t meas;
         HIP_Cmd_t cmd;
         uint32_t dummy;
     } msgContent;
@@ -61,7 +60,7 @@ struct
     QueueHandle_t hQueue;
     uint32_t msgCount;
 
-    MFX_output_t lastMeas;
+    FS_Meas_t lastMeas;
 
     uint32_t lastPing;
 
@@ -76,7 +75,7 @@ struct
 
 /******************************************************************************/
 
-static void _Controller_ProcessNewMeas(const MFX_output_t *mdiData);
+static void _Controller_ProcessNewMeas(const FS_Meas_t *meas);
 static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd);
 
 static void _Controller_HandlePing(const HIP_Ping_t *cmd);
@@ -85,8 +84,6 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd);
 static void _Controller_HandleWM(const HIP_WM_t *cmd);
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd);
 static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd);
-
-static void _Controller_Process();
 
 static void _Controller_SendMessages();
 
@@ -152,9 +149,17 @@ static void MSX_Process(TimerHandle_t xTimer);
 
 void Controller_Task()
 {
+    EC_Enable(0);
+
     vTaskDelay(1000);
 
     g_controllerState.mState = MachineState_Disarmed;
+
+    int rc = EC_Init(EC_BUS);
+    if (rc)
+    {
+        // TODO: handle error
+    }
 
     if ((_hWatchdog = xTaskCreateStatic((TaskFunction_t)_Watchdog_Task,
                                         (const char *)"WATCHDOG", WD_STACK_SIZE / sizeof(StackType_t),
@@ -180,12 +185,6 @@ void Controller_Task()
                                        pdTRUE, (void *)0, MSX_Process, &msxTmrBuffer)) == NULL)
     {
         ; // TODO: handle error
-    }
-
-    int rc = EC_Init(EC_BUS);
-    if (rc)
-    {
-        // TODO: handle error
     }
 
     rc = HostIface_Start();
@@ -214,10 +213,8 @@ void Controller_Task()
         {
             switch (msg.type)
             {
-            case ControllerMessageType_Dummy:
             case ControllerMessageType_Meas:
-                _Controller_ProcessNewMeas(&msg.msgContent.mdiData);
-                _Controller_Process();
+                _Controller_ProcessNewMeas(&msg.msgContent.meas);
                 break;
             case ControllerMessageType_Cmd:
                 _Controller_ProcessCommand(&msg.msgContent.cmd);
@@ -230,8 +227,11 @@ void Controller_Task()
 
 /******************************************************************************/
 
-static void _Controller_Process()
+static void _Controller_ProcessNewMeas(const FS_Meas_t *meas)
 {
+    g_controllerState.msgCount++;
+    g_controllerState.lastMeas = *meas;
+
     static MachineState_t prevState = MachineState_Disarmed;
 
     /*
@@ -250,16 +250,7 @@ static void _Controller_Process()
     }
     else if (g_controllerState.mState == MachineState_Armed)
     {
-        struct
-        {
-            uint64_t time;
-            MFX_output_t meas;
-        } meas;
-
-        meas.time = Controller_GetUS();
-        meas.meas = g_controllerState.lastMeas;
-
-        FlightScenario_SetInputs(FlightScenario_Input_Meas, (void *)&meas);
+        FlightScenario_SetInputs(FlightScenario_Input_Meas, meas);
 
         ControlOutputs_t output;
         FlightScenario_Result_t fcRes = FlightScenario(&output);
@@ -289,8 +280,15 @@ static void _Controller_Process()
 
 static void MSX_Process(TimerHandle_t xTimer)
 {
-    static uint32_t cnt = 0;
-    Controller_NewDummy(cnt++);
+    ControllerMessage_t msg;
+    msg.type = ControllerMessageType_Meas;
+
+    msg.msgContent.meas.us = Controller_GetUS();
+
+    msg.msgContent.meas.wheelsPulses.l = Timer_GetValue(TIM_DEV_L);
+    msg.msgContent.meas.wheelsPulses.r = Timer_GetValue(TIM_DEV_R);
+
+    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
 }
 
 /******************************************************************************/
@@ -306,29 +304,11 @@ void _Sender_Task()
 
 /******************************************************************************/
 
-void Controller_NewMeas(const MFX_output_t *mdiData)
-{
-    ControllerMessage_t msg;
-    msg.type = ControllerMessageType_Meas;
-    msg.msgContent.mdiData = *mdiData;
-
-    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
-}
-
 void Controller_NewCommand(const HIP_Cmd_t *cmd)
 {
     ControllerMessage_t msg;
     msg.type = ControllerMessageType_Cmd;
     msg.msgContent.cmd = *cmd;
-
-    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
-}
-
-void Controller_NewDummy(uint32_t dummy)
-{
-    ControllerMessage_t msg;
-    msg.type = ControllerMessageType_Dummy;
-    msg.msgContent.dummy = dummy;
 
     xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
 }
@@ -341,12 +321,6 @@ void Controller_HandleFatal()
 }
 
 /******************************************************************************/
-
-void _Controller_ProcessNewMeas(const MFX_output_t *mdiData)
-{
-    g_controllerState.msgCount++;
-    g_controllerState.lastMeas = *mdiData;
-}
 
 static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
 {
@@ -537,6 +511,7 @@ void _Controller_SendPAT()
 
 void _Controller_SendMFX()
 {
+    /*
     HIP_Payload_MFX_t mfx;
 
     memcpy(mfx.linear_acceleration,
@@ -547,6 +522,7 @@ void _Controller_SendMFX()
            sizeof(mfx.gravity));
 
     HostIface_PutData(HIP_MSG_MFX, (uint8_t *)&mfx, sizeof(mfx));
+    */
 }
 
 void _Controller_SendSTB()

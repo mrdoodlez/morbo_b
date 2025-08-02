@@ -77,9 +77,20 @@ extern "C"
         } att;
     } FS_PID_Koeffs_t;
 
+    typedef struct
+    {
+        uint64_t us;
+        struct
+        {
+            uint32_t l;
+            uint32_t r;
+        } wheelsPulses;
+    } FS_Meas_t;
+
+
     int FlightScenario_SetScenario(FlightScenario_t s);
 
-    int FlightScenario_SetInputs(FlightScenario_Input_t type, void *data);
+    int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data);
 
     int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t* koeffs);
 

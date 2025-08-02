@@ -43,7 +43,7 @@ def solve_planimetry(y_out_input):
         eq3 = 0  # no constraint
         return [eq1, eq2, eq3]
 
-    initial_guess = [150, R1 / 2, -R1 / 2]
+    initial_guess = [150, R1 / 2, R1 / 2]
     solution = fsolve(equations, initial_guess)
     x_out_sol, x_i_sol, y_i_sol = solution
 
@@ -102,4 +102,4 @@ def solve_and_draw(y_out_input):
 
 # Example call
 if __name__ == "__main__":
-    solve_and_draw(-100)
+    solve_and_draw(-39)

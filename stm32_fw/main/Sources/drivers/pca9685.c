@@ -3,6 +3,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "i2c.h"
+#include <string.h>
 
 #define PCA9685_MODE1 0x00      /**< Mode Register 1 */
 #define PCA9685_MODE2 0x01      /**< Mode Register 2 */
@@ -120,6 +121,8 @@ int PCA9685_Init(uint8_t i2cDev, uint8_t i2cAddr, uint8_t prescale)
     _ctx.i2c = i2cDev;
 
     PCA9685_Reset();
+
+    memset (_ctx.us, 0xDA, sizeof(_ctx.us));
 
     // set the default internal frequency
     PCA9685_SetOscillatorFrequency(FREQUENCY_OSCILLATOR);

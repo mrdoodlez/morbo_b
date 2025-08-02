@@ -4,7 +4,7 @@
 #include "spi.h"
 #include "gpio.h"
 #include "adc.h"
-#include "timer.h"
+#include "timer_ext.h"
 #include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -62,7 +62,8 @@ int main(void)
 
     // ADC_Init(1);
 
-    // Timer_Init(1);
+    Timer_Init(2);
+    Timer_Init(4);
 
     xTaskCreateStatic((TaskFunction_t)Controller_Task,
                       (const char *)"MAIN", MAIN_STACK_SIZE / sizeof(StackType_t),

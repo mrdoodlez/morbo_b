@@ -39,7 +39,7 @@ static TIM_HandleTypeDef *Timer_GatHandle(int dev)
         return &htim2;
     case 4:
         return &htim4;
-    default:    
+    default:
         return NULL;
     }
 }

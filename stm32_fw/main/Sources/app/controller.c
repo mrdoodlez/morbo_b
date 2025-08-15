@@ -93,6 +93,7 @@ static void _Controller_SendAccCal();
 static void _Controller_SendMFX();
 static void _Controller_SendPAT();
 static void _Controller_SendSTB();
+static void _Controller_SendPVT();
 
 static void _Controller_SendMon();
 
@@ -112,6 +113,7 @@ struct
         {.msgId = HIP_MSG_MFX, .emit = _Controller_SendMFX},
         {.msgId = HIP_MSG_STB, .emit = _Controller_SendSTB},
         {.msgId = HIP_MSG_MON, .emit = _Controller_SendMon},
+        {.msgId = HIP_MSG_PVT, .emit = _Controller_SendPVT},
 };
 
 /******************************************************************************/
@@ -250,6 +252,8 @@ static void _Controller_ProcessNewMeas(const FS_Meas_t *meas)
     }
     else if (g_controllerState.mState == MachineState_Armed)
     {
+        FlightScenario_BeginEpoch();
+
         FlightScenario_SetInputs(FlightScenario_Input_Meas, meas);
 
         ControlOutputs_t output;
@@ -267,6 +271,8 @@ static void _Controller_ProcessNewMeas(const FS_Meas_t *meas)
         {
             Controller_HandleFatal();
         }
+
+        FlightScenario_EndEpoch();
     }
     else if (g_controllerState.mState == MachineState_Disarmed)
     {
@@ -421,7 +427,6 @@ static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd)
     memcpy(&pk.att, &cmd->payload.att, sizeof(pk.att));
 
     FlightScenario_Set_PID_Koeffs(&pk);
-    FlightScenario_Set_Mass(cmd->payload.mass);
 
     uint16_t cmdA = HIP_MSG_SET_PID;
     HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
@@ -509,6 +514,18 @@ void _Controller_SendPAT()
     HostIface_PutData(HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
 }
 
+void _Controller_SendPVT()
+{
+    const FS_State_t *s = FlightScenario_GetState();
+
+    HIP_Payload_PVT_t pvt;
+    memcpy(pvt.position, s->p, sizeof(pvt.position));
+    memcpy(pvt.velocity, s->v, sizeof(pvt.velocity));
+    pvt.time = s->time;
+
+    HostIface_PutData(HIP_MSG_PVT, (uint8_t *)&pvt, sizeof(pvt));
+}
+
 void _Controller_SendMFX()
 {
     /*
@@ -527,6 +544,7 @@ void _Controller_SendMFX()
 
 void _Controller_SendSTB()
 {
+    /*
     const FS_State_t *s = FlightScenario_GetState();
 
     HIP_Payload_STB_t stb;
@@ -536,6 +554,7 @@ void _Controller_SendSTB()
     memcpy(stb.thrustN, s->thrustN, sizeof(stb.thrustN));
 
     HostIface_PutData(HIP_MSG_STB, (uint8_t *)&stb, sizeof(stb));
+    */
 }
 
 void _Controller_SendMon()

@@ -9,6 +9,7 @@
 extern "C"
 {
 #endif
+
     typedef enum
     {
         FlightScenario_None,
@@ -33,32 +34,47 @@ extern "C"
     typedef enum
     {
         FS_StateFlags_MeasValid = 1 << 0,
-        FS_StateFlags_StateDotValid = 1 << 1,
-        FS_StateFlags_StateValid = 1 << 2,
+        FS_StateFlags_StateValid = 1 << 1,
     } FS_StateFlags_t;
 
     typedef struct
     {
-        float time;
+        uint64_t us;
+        struct
+        {
+            uint32_t l;
+            uint32_t r;
+        } wheelsPulses;
+
         MFX_output_t imu;
+    } FS_Meas_t;
+
+    typedef enum
+    {
+        FS_Wheel_L = 0,
+        FS_Wheel_R,
+
+        FS_Wheel_Cnt,
+    } FS_Wheel_t;
+
+    typedef struct
+    {
+        FS_Meas_t meas;
+        float time;
 
         float a[FS_NUM_AXIS];
         float v[FS_NUM_AXIS];
         float p[FS_NUM_AXIS];
 
         float r[FS_NUM_AXIS];
-        float dr[FS_NUM_AXIS];
         float w[FS_NUM_AXIS];
-
-        float u[FS_NUM_AXIS];
-        float thrustN[4];  // [N]
 
         uint32_t flags;
     } FS_State_t;
 
     typedef struct
     {
-        float pwm[4];
+        float pwm[FS_Wheel_Cnt];
     } ControlOutputs_t;
 
     typedef struct
@@ -77,22 +93,11 @@ extern "C"
         } att;
     } FS_PID_Koeffs_t;
 
-    typedef struct
-    {
-        uint64_t us;
-        struct
-        {
-            uint32_t l;
-            uint32_t r;
-        } wheelsPulses;
-    } FS_Meas_t;
-
-
     int FlightScenario_SetScenario(FlightScenario_t s);
 
     int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data);
 
-    int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t* koeffs);
+    int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t *koeffs);
 
     int FlightScenario_Set_Mass(float mass);
 
@@ -102,7 +107,11 @@ extern "C"
 
     void FlightScenario_Init(int algoFreq);
 
-    const FS_State_t* FlightScenario_GetState();
+    const FS_State_t *FlightScenario_GetState();
+
+    void FlightScenario_BeginEpoch();
+
+    void FlightScenario_EndEpoch();
 
 #ifdef __cplusplus
 }

@@ -5,6 +5,7 @@ import struct
 import time
 import threading
 import sys
+import math
 
 from typing import Optional, TYPE_CHECKING
 from circuitpython_typing import WriteableBuffer, ReadableBuffer
@@ -151,6 +152,7 @@ MSG_ACC = 0x0A01
 MSG_MFX = 0x0A02
 MSG_DST = 0x0A03
 MSG_STB = 0x0A04
+MSG_PVT = 0x0A05
 
 MSG_CAL_ACC = 0x0B01
 MSG_CAL_GYRO = 0x0B02
@@ -181,6 +183,8 @@ acw_x, acw_y, acw_z = [0] * time_window, [0] * time_window, [0] * time_window
 acl_x, acl_y, acl_z = [0] * time_window, [0] * time_window, [0] * time_window
 
 pos_x, pos_y, pos_z = [0] * time_window, [0] * time_window, [0] * time_window
+vel_x, vel_y, vel_z = [0] * time_window, [0] * time_window, [0] * time_window
+
 roll, pitch, yaw = [0] * time_window, [0] * time_window, [0] * time_window
 roll_rate, pitch_rate, yaw_rate = [0] * time_window, [0] * time_window, [0] * time_window
 pid_roll, pid_pitch, pid_yaw = [0] * time_window, [0] * time_window, [0] * time_window
@@ -352,6 +356,22 @@ def handle_stb(payload):
 
     #print(stb_data)
 
+def handle_pvt(payload):
+    global pos_x, pos_y, pos_z
+    global vel_x, vel_y, vel_z
+    pvt_data = struct.unpack('<7f', b''.join(payload))
+
+    pos_x.append(pvt_data[0])
+    pos_y.append(pvt_data[1])
+    pos_z.append(pvt_data[2])
+
+    vel_x.append(pvt_data[3])
+    vel_y.append(pvt_data[4])
+    vel_z.append(pvt_data[5])
+
+    time = pvt_data[6]
+
+
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
 
@@ -370,6 +390,8 @@ def em_command(msgId, msgPeriod, port):
         msgId = MSG_MON
     elif msgId == "stb":
         msgId = MSG_STB
+    elif msgId == "pvt":
+        msgId = MSG_PVT
     else:
         print("command not supported")
         return
@@ -608,6 +630,8 @@ def listener_function(name, port):
                     handle_mon(payload)
                 elif cmd == MSG_STB:
                     handle_stb(payload)
+                elif cmd == MSG_PVT:
+                    handle_pvt(payload)
                 else:
                     print("unknown message: ", cmd)
 
@@ -623,123 +647,106 @@ def listener_function(name, port):
 
 ################################################################################
 
-def load_stl(filename):
-    # Load the STL file
-    model = mesh.Mesh.from_file(filename)
-    model.update_normals()
-    return model.vectors, model.normals
-
-def draw_model(vertices, normals):
-    glBegin(GL_TRIANGLES)
-    i = 0
-    for f in vertices:
-        glNormal3fv(normals[i])
-        glColor3f(0, 0, 1)
-        for vertex in f:
-            glVertex3fv(vertex)
-        i += 1
-    glEnd()
-
-def draw_xy_plane():
-    """Draw the fixed XY plane grid."""
-    glColor3fv((0.5, 0.5, 0.5))  # Set color for the grid lines (light gray)
-    glBegin(GL_LINES)
-
-    # Draw grid lines along the X axis (from -10 to 10)
-    for x in range(-10, 11):
-        glVertex3fv((x, -10, 0))
-        glVertex3fv((x, 10, 0))
-
-    # Draw grid lines along the Y axis (from -10 to 10)
-    for y in range(-10, 11):
-        glVertex3fv((-10, y, 0))
-        glVertex3fv((10, y, 0))
-    glEnd()
-
-def draw_trajectory(traj):
-    glLineWidth(2)  # Set line width for trajectory
-    glColor3fv((1, 1, 1))  # White color for the trajectory
-    glBegin(GL_LINE_STRIP)  # Draw a continuous line for the trajectory
-    for point in traj:
-        glVertex3fv(point)  # Draw each point in the trajectory
-    glEnd()
-
-def setup_lighting():
-    glEnable(GL_LIGHTING)
-    glEnable(GL_LIGHT0)
-    glLightfv(GL_LIGHT0, GL_POSITION, [-0.1, 0, 2.0, 1.0])  # Light position
-    glLightfv(GL_LIGHT0, GL_AMBIENT, [0.3, 0.3, 0.3, 1.0])   # Softer ambient light
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, [0.7, 0.7, 0.7, 1.0])   # Softer diffuse light
-    glLightfv(GL_LIGHT0, GL_SPECULAR, [0.5, 0.5, 0.5, 1.0])  # Softer specular light
-
-    # Material properties for soft reflections
-    glMaterialfv(GL_FRONT, GL_AMBIENT, [0.3, 0.3, 0.3, 1.0])  # Soft ambient reflection
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, [0.6, 0.6, 0.6, 1.0])  # Softer diffuse reflection
-    glMaterialfv(GL_FRONT, GL_SPECULAR, [0.5, 0.5, 0.5, 1.0]) # Softer specular reflections
-    glMaterialf(GL_FRONT, GL_SHININESS, 10.0)                 # Low shininess for a softer shine
-
-def visio_flight_function(name):
+def visio_track_function(name):
     pygame.init()
-    display = (1024, 768)
-    pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
+    screen = pygame.display.set_mode((800, 600))
+    clock  = pygame.time.Clock()
 
-    # Perspective settings
-    gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
+    PIXELS_PER_METER = 160  # 1 m = 160 px
+    font = pygame.font.SysFont("consolas", 20)
 
-    gluLookAt(
-        -1, -1,  2,  # Camera position
-        0.0, 0.0, 0.0,  # Look at the origin
-        0.0, 0.0, 1.0   # Up direction
-    )
+    rover_img_raw = pygame.image.load("rover.png").convert_alpha()
+    SPRITE_TO_X_DEG = 90
+    rover_img_raw = pygame.transform.rotate(rover_img_raw, -SPRITE_TO_X_DEG)
 
-    glEnable(GL_DEPTH_TEST)  # Enable depth testing
-    setup_lighting()         # Set up lighting
+    max_scale_factor = screen.get_width() // 5
+    w, h = rover_img_raw.get_size()
+    scale_ratio = min(max_scale_factor / w, max_scale_factor / h)
+    new_size = (int(w * scale_ratio), int(h * scale_ratio))
+    rover_img = pygame.transform.smoothscale(rover_img_raw, new_size)
 
-    # Load the STL model
-    faces, normals = load_stl('copter_model-Body.stl')  # Replace with your STL file path
+    def world_to_screen(wx, wy, cam_x, cam_y):
+        cx, cy = screen.get_width() // 2, screen.get_height() // 2
+        sx = cx + (wx - cam_x) * PIXELS_PER_METER
+        sy = cy - (wy - cam_y) * PIXELS_PER_METER  # minus keeps Y up
+        return int(sx), int(sy)
 
-    for i in range(0, len(faces)):
-        faces[i] /= 1000
+    def draw_grid(cam_x, cam_y, step_m=0.5, color=(180,180,180)):
+        w, h = screen.get_width(), screen.get_height()
+        half_w_m = w / (2 * PIXELS_PER_METER)
+        half_h_m = h / (2 * PIXELS_PER_METER)
 
-    clock = pygame.time.Clock()
+        x0 = math.floor((cam_x - half_w_m) / step_m) * step_m
+        x1 = math.ceil ((cam_x + half_w_m) / step_m) * step_m
+        y0 = math.floor((cam_y - half_h_m) / step_m) * step_m
+        y1 = math.ceil ((cam_y + half_h_m) / step_m) * step_m
 
-    traj = []
+        gx = x0
+        while gx <= x1 + 1e-9:
+            x_s, y_top = world_to_screen(gx, y0, cam_x, cam_y)
+            _,   y_bot = world_to_screen(gx, y1, cam_x, cam_y)
+            pygame.draw.line(screen, color, (x_s, y_top), (x_s, y_bot))
+            gx += step_m
 
-    global pos_yaw
-    global pos_pitch
-    global pos_roll
+        gy = y0
+        while gy <= y1 + 1e-9:
+            x_left, y_s = world_to_screen(x0, gy, cam_x, cam_y)
+            x_right, _  = world_to_screen(x1, gy, cam_x, cam_y)
+            pygame.draw.line(screen, color, (x_left, y_s), (x_right, y_s))
+            gy += step_m
 
-    global pos_x
-    global pos_y
-    global pos_z
+    def draw_trace(trace, cam_x, cam_y):
+        if len(trace) > 1:
+            pts = [world_to_screen(wx, wy, cam_x, cam_y) for (wx, wy) in trace]
+            pygame.draw.lines(screen, (255,0,0), False, pts, 2)
 
-    global doExit
+    def draw_telemetry(x, y, heading_deg, vx, vy):
+        info = [
+            f"X: {x:.2f}",
+            f"Y: {y:.2f}",
+            f"Heading: {heading_deg:.1f}°",
+            f"Vx: {vx:.2f}",
+            f"Vy: {vy:.2f}",
+        ]
+        for i, line in enumerate(info):
+            screen.blit(font.render(line, True, (0,0,0)), (10, 10 + i*22))
 
+    trace_points = []
+
+    global doExit, pos_x, pos_y, vel_x, vel_y
     while not doExit:
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                doExit = True
 
-        draw_xy_plane()
+        x = pos_x[-1]
+        y = pos_y[-1]
+        vx = vel_x[-1]
+        vy = vel_y[-1]
 
-        glPushMatrix()
+        trace_points.append((x, y))
 
-        glTranslatef(-pos_x, -pos_y, pos_z)
+        # --- heading: CCW-positive, 0° along +X ---
+        heading_deg = (math.degrees(math.atan2(vy, vx)) % 360) if (vx != 0.0 or vy != 0.0) else heading_deg if 'heading_deg' in locals() else 0.0
 
-        glRotatef(-pos_yaw, 0.0, 0.0, 1.0)  # Rotate around Z-axis
-        glRotatef(-pos_roll, 1.0, 0.0, 0.0)  # Rotate around X-axis
-        glRotatef(-pos_pitch, 0.0, 1.0, 0.0)  # Rotate around Y-axis
+        # --- draw ---
+        screen.fill((230,230,230))
+        draw_grid(x, y)
+        draw_trace(trace_points, x, y)
 
-        # Draw the STL model
-        draw_model(faces, normals)
+        # rotate CCW by +heading (pre-rotation already aligned sprite to +X)
+        rotated = pygame.transform.rotate(rover_img, heading_deg)
+        rect = rotated.get_rect(center=(screen.get_width()//2, screen.get_height()//2))
+        screen.blit(rotated, rect.topleft)
 
-        glPopMatrix()
-
-        traj.append((-pos_x, -pos_y, pos_z))
-        # draw_trajectory(traj)
+        draw_telemetry(x, y, heading_deg, vx, vy)
 
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(30)
 
     pygame.quit()
+
+################################################################################
 
 ani_pose = None
 ani_acc = None
@@ -1014,8 +1021,8 @@ def main():
     console = threading.Thread(target=console_function, args=("console", port.service,))
     console.start()
 
-    if mode == "flight":
-        visio = threading.Thread(target=visio_flight_function, args=("visio",))
+    if mode == "track":
+        visio = threading.Thread(target=visio_track_function, args=("track",))
         visio.start()
     elif mode == "plot acc":
         init_acc_plot()

@@ -84,6 +84,7 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd);
 static void _Controller_HandleWM(const HIP_WM_t *cmd);
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd);
 static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd);
+static void _Controller_HandleSetVels(const HIP_SetVels_t *cmd);
 
 static void _Controller_SendMessages();
 
@@ -350,6 +351,9 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
     case HIP_MSG_SET_PID:
         _Controller_HandleSetPid((HIP_SetPID_t *)cmd);
         break;
+    case HIP_MSG_SET_VELS:
+        _Controller_HandleSetVels((HIP_SetVels_t *)cmd);
+        break;
     default:
         _dbg = 1003;
         break;
@@ -423,12 +427,22 @@ static void _Controller_HandleWM(const HIP_WM_t *cmd)
 
 static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd)
 {
+    /*
     FS_PID_Koeffs_t pk;
     memcpy(&pk.att, &cmd->payload.att, sizeof(pk.att));
 
     FlightScenario_Set_PID_Koeffs(&pk);
+    */
 
     uint16_t cmdA = HIP_MSG_SET_PID;
+    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+}
+
+static void _Controller_HandleSetVels(const HIP_SetVels_t *cmd)
+{
+    FlightScenario_SetInputs(FlightScenario_Input_VelCmd, (void*)&(cmd->payload));
+
+    uint16_t cmdA = HIP_MSG_SET_VELS;
     HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
@@ -580,7 +594,7 @@ static void _Watchdog_Task() // TODO: enable normal watchdog
         {
             if (g_controllerState.mState == MachineState_Armed)
             {
-                // System_Reset();
+                Controller_HandleFatal();
             }
 
             g_controllerState.mState = MachineState_Disarmed;

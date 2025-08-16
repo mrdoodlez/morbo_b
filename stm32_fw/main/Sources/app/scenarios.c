@@ -11,6 +11,7 @@
 
 static FlightScenario_Result_t Estimate();
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
+static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *);
 
 static const struct
 {
@@ -45,6 +46,7 @@ FlightScenarioFunc_t _execs[FlightScenario_Total] =
     {
         NULL,
         FlightScenarioFunc_Debug,
+        FlightScenarioFunc_VelSet,
 };
 
 static struct
@@ -64,7 +66,20 @@ static struct
 
     float pwm[FS_Wheel_Cnt];
 
+    struct
+    {
+        float v;
+        float w;
+        char stop;
+    } cmdVel;
+
     FS_PID_Koeffs_t kPid;
+
+    struct
+    {
+        float v;
+        float w;
+    } iSum;
 } _copterState;
 
 /******************************************************************************/
@@ -75,6 +90,12 @@ void FlightScenario_Init(int algoFreq)
 
     _copterState.enc[FS_Wheel_L].windowSz = 16;
     _copterState.enc[FS_Wheel_R].windowSz = 16;
+
+    _copterState.kPid.v.kp = 0.5;
+    _copterState.kPid.v.ki = 0.05;
+
+    _copterState.kPid.w.kp = 0.1;
+    _copterState.kPid.w.ki = 0.01;
 
     _copterState.isStatic = 1;
 }
@@ -123,6 +144,19 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
     else if (type == FlightScenario_Input_DebugPwms)
     {
         memcpy(_copterState.pwm, data, sizeof(_copterState.pwm));
+    }
+    else if (type == FlightScenario_Input_VelCmd)
+    {
+        struct VelCmd
+        {
+            float v;
+            float w;
+            uint32_t flags;
+        };
+
+        _copterState.cmdVel.v = ((struct VelCmd*)data)->v;
+        _copterState.cmdVel.w = ((struct VelCmd*)data)->w;
+        _copterState.cmdVel.stop = ((struct VelCmd*)data)->flags != 0;
     }
 
     return 0;
@@ -245,6 +279,8 @@ static FlightScenario_Result_t Estimate()
             _copterState.measBuff[_copterState.epochIdx].r[1] = 0.0;
             _copterState.measBuff[_copterState.epochIdx].r[2] = phi;
 
+            _copterState.measBuff[_copterState.epochIdx].vlin = vlin;
+
             _copterState.measBuff[_copterState.epochIdx].flags |= FS_StateFlags_StateValid;
         }
     }
@@ -255,5 +291,47 @@ static FlightScenario_Result_t Estimate()
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *output)
 {
     memcpy(output->pwm, _copterState.pwm, sizeof(_copterState.pwm));
+    return FlightScenario_Result_OK;
+}
+
+#define PMAX    0.9
+
+static inline float truncate( float x)
+{
+    if (x > PMAX)
+        x = PMAX;
+    else if (x < -PMAX)
+        x = -PMAX;
+    return x;
+}
+
+static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *output)
+{
+    if (_copterState.cmdVel.stop)
+    {
+        _copterState.iSum.v = 0.0;
+        _copterState.iSum.w = 0.0;
+
+        output->pwm[FS_Wheel_R] = 0.0;
+        output->pwm[FS_Wheel_L] = 0.0;
+    }
+    else
+    {
+        float el = _copterState.cmdVel.v - _copterState.measBuff[_copterState.epochIdx].vlin;
+        float er = _copterState.cmdVel.w - _copterState.measBuff[_copterState.epochIdx].w[2];
+
+        _copterState.iSum.v += el;
+        _copterState.iSum.w += er;
+
+        float ptot = _copterState.kPid.v.kp * el + _copterState.kPid.v.ki * _copterState.iSum.v;
+        float pdif = _copterState.kPid.w.kp * er + _copterState.kPid.w.ki * _copterState.iSum.w;
+
+        output->pwm[FS_Wheel_R] = truncate((ptot + pdif) / 2.0);
+        output->pwm[FS_Wheel_L] = truncate((ptot - pdif) / 2.0);
+    }
+
+    _copterState.pwm[FS_Wheel_L] = output->pwm[FS_Wheel_L];
+    _copterState.pwm[FS_Wheel_R] = output->pwm[FS_Wheel_R];
+
     return FlightScenario_Result_OK;
 }

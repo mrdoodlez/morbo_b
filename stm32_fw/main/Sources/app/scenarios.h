@@ -14,6 +14,7 @@ extern "C"
     {
         FlightScenario_None,
         FlightScenario_Debug,
+        FlightScenario_VelSet,
 
         FlightScenario_Total,
     } FlightScenario_t;
@@ -29,6 +30,7 @@ extern "C"
     {
         FlightScenario_Input_Meas,
         FlightScenario_Input_DebugPwms,
+        FlightScenario_Input_VelCmd,
     } FlightScenario_Input_t;
 
     typedef enum
@@ -69,6 +71,8 @@ extern "C"
         float r[FS_NUM_AXIS];
         float w[FS_NUM_AXIS];
 
+        float vlin;
+
         uint32_t flags;
     } FS_State_t;
 
@@ -84,13 +88,15 @@ extern "C"
             float kp;
             float kd;
             float ki;
-        } pos;
+        } v;
+
         struct
         {
-            float kp[3];
-            float kd[3];
-            float ki[3];
-        } att;
+            float kp;
+            float kd;
+            float ki;
+        } w;
+
     } FS_PID_Koeffs_t;
 
     int FlightScenario_SetScenario(FlightScenario_t s);

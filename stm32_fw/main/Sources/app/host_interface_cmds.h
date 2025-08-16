@@ -24,6 +24,7 @@ extern "C"
 #define HIP_MSG_WM 0x0400
 #define HIP_MSG_RESET_POS 0x0500
 #define HIP_MSG_SET_PID 0x0600
+#define HIP_MSG_SET_VELS 0x0700
 
 #define HIP_MSG_PAT 0x0A00
 #define HIP_MSG_ACC 0x0A01
@@ -243,6 +244,26 @@ extern "C"
         uint8_t dummy;
         uint16_t crc;
     } __attribute__((packed)) HIP_ResetPos_t;
+
+    typedef enum
+    {
+        HIP_SetVels_Flags_FullStop = 1 << 0,
+    } HIP_SetVels_Flags_t;
+
+    typedef struct
+    {
+        float v;
+        float w;
+        uint32_t flags;
+    } __attribute__((packed)) HIP_Payload_SetVels_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_SetVels_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_SetVels_t;
+
     typedef struct
     {
         HIP_Header_t header;

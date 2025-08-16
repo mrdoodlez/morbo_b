@@ -144,6 +144,9 @@ LEN_RP = 1
 CMD_SET_PID = 0x0600
 LEN_SET_PID = (3 * 3 + 1) * 4
 
+CMD_SET_VELS = 0x0700
+LEN_SET_VELS = 4 + 4 + 4
+
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
 
@@ -427,7 +430,7 @@ def wm_command(wm, fc, port):
 
     if fc == "dbg":
         fsMode = 1
-    if fc == "wu":
+    if fc == "vc":
         fsMode = 2
 
     cmd = CMD_WM
@@ -506,6 +509,28 @@ def set_pid_command(port):
 
     ackRx = ackAwait = -1
 
+def set_vels_command(port, v, w, stop):
+    global ackRx, ackAwait
+
+    cmd = CMD_SET_VELS
+    len = LEN_SET_VELS
+
+    flags = 0
+    if (stop):
+        flags = 1
+
+    sp = struct.pack('<2sHHffIH', b'mb', cmd, len, v, w, flags, CRC)
+    port.write(sp)
+
+    ackAwait = CMD_SET_PID
+
+    time.sleep(0.5)
+
+    if ackRx != ackAwait:
+        print("WRN: command not acked")
+
+    ackRx = ackAwait = -1
+
 def pinger_function(name, port):
     global pingSeq
     global doExit
@@ -526,6 +551,8 @@ def pinger_function(name, port):
         time.sleep(1)
 
 def console_function(name, port):
+    v = 0.0
+    w = 0.0
     global doExit
     while not doExit:
         command = input("> ")
@@ -546,6 +573,22 @@ def console_function(name, port):
                 reset_pos_command(port)
             elif command[0] == "sp":
                 set_pid_command(port)
+            elif command[0] == "v+":
+                v = v + 0.1
+                set_vels_command(port, v, w, False)
+            elif command[0] == "v-":
+                v = v - 0.1
+                set_vels_command(port, v, w, False)
+            elif command[0] == "w+":
+                w = w + 1.0
+                set_vels_command(port, v, w, False)
+            elif command[0] == "w-":
+                w = w - 1.0
+                set_vels_command(port, v, w, False)
+            elif command[0] == "vs":
+                v = 0.0
+                w = 0.0
+                set_vels_command(port, v, w, True)
             elif command[0] == 'q':
                 doExit = True
 

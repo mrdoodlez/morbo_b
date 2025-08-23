@@ -31,7 +31,9 @@ extern "C"
         Vec3D_t ofsset;
     } IMU_CalData_t;
 
-    void IMU_Init(uint8_t dev);
+    int IMU_Init(uint8_t dev);
+
+    void IMU_Process();
 
     int IMU_SetMode(IMU_Mode_t workmode);
 

@@ -44,8 +44,7 @@ extern "C"
 
 #define IMU_BUS 1
 #define ADC_DEV 1
-#define TIM_DEV 1
-#define EC_BUS TIM_DEV
+#define EC_BUS 1
 #define HIP_SERIAL 1
 
 #define TIM_DEV_L 4

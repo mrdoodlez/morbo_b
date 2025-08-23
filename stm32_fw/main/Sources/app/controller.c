@@ -161,42 +161,46 @@ void Controller_Task()
     int rc = EC_Init(EC_BUS);
     if (rc)
     {
-        // TODO: handle error
+        Controller_HandleFatal();
     }
 
     if ((_hWatchdog = xTaskCreateStatic((TaskFunction_t)_Watchdog_Task,
                                         (const char *)"WATCHDOG", WD_STACK_SIZE / sizeof(StackType_t),
                                         NULL, 3, _watchdogStack, &_watchdogBuffer)) == NULL)
     {
-        // TODO: handle error
+        Controller_HandleFatal();
     }
 
     if ((_hSender = xTaskCreateStatic((TaskFunction_t)_Sender_Task,
                                       (const char *)"SNDR", SNDR_STACK_SIZE / sizeof(StackType_t),
                                       NULL, 3, _msgSenderStack, &_msgSenderBuffer)) == NULL)
     {
-        // TODO: handle error
+        Controller_HandleFatal();
     }
 
     if ((g_controllerState.hQueue = xQueueCreateStatic(MSG_QUEUE_LENGTH, MSG_ITEM_SIZE,
                                                        _msgStorage, &_msgQueue)) == NULL)
     {
-        // TODO: handle error
+        Controller_HandleFatal();
     }
 
     if ((msxTimer = xTimerCreateStatic("MSX", pdMS_TO_TICKS(TIMER_PERIOD),
                                        pdTRUE, (void *)0, MSX_Process, &msxTmrBuffer)) == NULL)
     {
-        ; // TODO: handle error
+        Controller_HandleFatal();
     }
 
     rc = HostIface_Start();
     if (rc)
     {
-        // TODO: handle error
+        Controller_HandleFatal();
     }
 
-    // IMU_Init(IMU_BUS);
+    rc = IMU_Init(IMU_BUS);
+    if (rc)
+    {
+        Controller_HandleFatal();
+    }
 
     // IMU_SetMode(IMU_Mode_Fusion); // TODO: comment it!
 
@@ -291,6 +295,8 @@ static void MSX_Process(TimerHandle_t xTimer)
     msg.type = ControllerMessageType_Meas;
 
     msg.msgContent.meas.us = Controller_GetUS();
+
+    IMU_Process();
 
     msg.msgContent.meas.wheelsPulses.l = Timer_GetValue(TIM_DEV_L);
     msg.msgContent.meas.wheelsPulses.r = Timer_GetValue(TIM_DEV_R);

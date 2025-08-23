@@ -4,13 +4,9 @@
 #include "controller.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "a3g4250d.h"
-#include "ism303dac.h"
-
-#define SAMPLE_RATIO (FUSION_FREQ / CALIB_FREQ)
+#include "asm330lhh.h"
 
 #define TIMER_FREQ FUSUIN_FREQ
-#define TIMER_PERIOD (1000 / FUSION_FREQ)
 
 /* MOVE_THR_G recommended between 0.15 - 0.30 g, higher value will relax condition on data selection for calibration but
    reduce the accuracy which will be around (moveThresh_g / 10) */
@@ -37,9 +33,7 @@ struct
     char fxLibVersion[35];
     char acLibVersion[35];
 
-    ISM303DAC_ACC_Object_t acc;
-    ISM303DAC_MAG_Object_t mag;
-    A3G4250D_Object_t gyro;
+    ASM330LHH_Object_t accgyro;
 
     struct
     {
@@ -76,11 +70,7 @@ void __dbg_hook(int arg)
 
 /******************************************************************************/
 
-static int ISM303DAC_ACC_0_Init();
-
-static int ISM303DAC_MAG_0_Init();
-
-static int A3G4250D_0_Init();
+static int ASM330LHH_0_Init();
 
 /******************************************************************************/
 
@@ -125,14 +115,8 @@ int IMU_Init(uint8_t i2cDev)
     g_IMU_State.sensorData[IMU_Sensor_Acc].calStatus = 1;
     */
 
-    if (ISM303DAC_ACC_0_Init())
+    if (ASM330LHH_0_Init())
         return -10;
-
-    if (ISM303DAC_MAG_0_Init())
-        return -20;
-
-    if (A3G4250D_0_Init())
-        return -30;
 
     /* DynamicInclinometer API initialization function */
     MotionFX_manager_init();
@@ -141,7 +125,7 @@ int IMU_Init(uint8_t i2cDev)
     int libVersionLen;
     MotionFX_manager_get_version(g_IMU_State.fxLibVersion, &libVersionLen);
 
-    MotionFX_enable_9X(mfxstate, MFX_ENGINE_ENABLE);
+    MotionFX_enable_6X(mfxstate, MFX_ENGINE_ENABLE);
 
     return 0;
 }
@@ -174,7 +158,7 @@ int IMU_GetCalData(IMU_Sensor_t s, IMU_CalData_t *cd, uint8_t *status)
 
 /******************************************************************************/
 
-void IMU_Process()
+void IMU_Process(MFX_output_t* fxOut)
 {
     for (int s = 0; s < IMU_NUM_SENSORS; s++)
         IMU_GetSamples((IMU_Sensor_t)s);
@@ -201,6 +185,7 @@ void IMU_Process()
                g_IMU_State.sensorData[IMU_Sensor_Mag].axesCal.x, sizeof(g_IMU_State.fxDataIn.mag));
 
         MotionFX_manager_run(&g_IMU_State.fxDataIn, &g_IMU_State.fxDataOut, delataTime);
+        memcpy(fxOut, &g_IMU_State.fxDataOut, sizeof(MFX_output_t));
     }
 
     g_IMU_State.lastTimestamp = timestampUs;
@@ -213,8 +198,8 @@ static void IMU_GetSamples(IMU_Sensor_t s)
 {
     if (s == IMU_Sensor_Acc)
     {
-        ISM303DAC_Axes_t axes;
-        if (ISM303DAC_ACC_GetAxes(&g_IMU_State.acc, &axes) != ISM303DAC_OK)
+        ASM330LHH_Axes_t axes;
+        if (ASM330LHH_ACC_GetAxes(&g_IMU_State.accgyro, &axes) != ASM330LHH_OK)
             ; // TODO: handle error
 
         g_IMU_State.sensorData[s].axesRaw.x[0] = (float)axes.x * FROM_MG_TO_G;
@@ -223,8 +208,8 @@ static void IMU_GetSamples(IMU_Sensor_t s)
     }
     else if (s == IMU_Sensor_Gyro)
     {
-        A3G4250D_Axes_t axes;
-        if (A3G4250D_GYRO_GetAxes(&g_IMU_State.gyro, &axes) != A3G4250D_OK)
+        ASM330LHH_Axes_t axes;
+        if (ASM330LHH_GYRO_GetAxes(&g_IMU_State.accgyro, &axes) != ASM330LHH_OK)
             ; // TODO: handle error
 
         g_IMU_State.sensorData[s].axesRaw.x[0] = (float)axes.x * FROM_MDPS_TO_DPS;
@@ -233,13 +218,7 @@ static void IMU_GetSamples(IMU_Sensor_t s)
     }
     else if (s == IMU_Sensor_Mag)
     {
-        ISM303DAC_Axes_t axes;
-        if (ISM303DAC_MAG_GetAxes(&g_IMU_State.mag, &axes) != ISM303DAC_OK)
-            ; // TODO: handle error
 
-        g_IMU_State.sensorData[s].axesRaw.x[0] = (float)axes.x * FROM_MGAUSS_TO_UT50;
-        g_IMU_State.sensorData[s].axesRaw.x[1] = (float)axes.y * FROM_MGAUSS_TO_UT50;
-        g_IMU_State.sensorData[s].axesRaw.x[2] = (float)axes.z * FROM_MGAUSS_TO_UT50;
     }
     else
         return;
@@ -323,14 +302,14 @@ void MotionFX_manager_get_version(char *version, int *length)
 
 /*******************************************************************************/
 
-int ISM303DAC_ACC_0_Init()
+int ASM330LHH_0_Init()
 {
-    ISM303DAC_IO_t io_ctx;
+    ASM330LHH_IO_t io_ctx;
     uint8_t id;
 
     /* Configure the accelero driver */
-    io_ctx.BusType = ISM303DAC_I2C_BUS; /* I2C */
-    io_ctx.Address = ISM303DAC_I2C_ADD_XL;
+    io_ctx.BusType = ASM330LHH_I2C_BUS; /* I2C */
+    io_ctx.Address = ASM330LHH_I2C_ADD_H;
     io_ctx.Init = DummyFunc;
     io_ctx.DeInit = DummyFunc;
     io_ctx.ReadReg = ReadReg;
@@ -338,86 +317,32 @@ int ISM303DAC_ACC_0_Init()
     io_ctx.GetTick = GetTick;
     io_ctx.Delay = Delay;
 
-    if (ISM303DAC_ACC_RegisterBusIO(&g_IMU_State.acc, &io_ctx) != ISM303DAC_OK)
+    if (ASM330LHH_RegisterBusIO(&g_IMU_State.accgyro, &io_ctx) != ASM330LHH_OK)
         return -10;
 
-    if (ISM303DAC_ACC_ReadID(&g_IMU_State.acc, &id) != ISM303DAC_OK)
+    if (ASM330LHH_ReadID(&g_IMU_State.accgyro, &id) != ASM330LHH_OK)
         return -20;
 
-    if (id != ISM303DAC_ID_XL)
+    if (id != ASM330LHH_ID)
         return -30;
 
-    if (ISM303DAC_ACC_Init(&g_IMU_State.acc) != ISM303DAC_OK)
+    if (ASM330LHH_Init(&g_IMU_State.accgyro) != ASM330LHH_OK)
         return -40;
 
-    if (ISM303DAC_ACC_Enable(&g_IMU_State.acc) != ISM303DAC_OK)
+    if (ASM330LHH_ACC_SetOutputDataRate(&g_IMU_State.accgyro, FUSION_FREQ) != ASM330LHH_OK)
         return -50;
 
-    return 0;
-}
+    if (ASM330LHH_ACC_SetFullScale(&g_IMU_State.accgyro, ACC_FS) != ASM330LHH_OK)
+        return -60;
 
-int ISM303DAC_MAG_0_Init()
-{
-    ISM303DAC_IO_t io_ctx;
-    uint8_t id;
+    if (ASM330LHH_ACC_Enable(&g_IMU_State.accgyro) != ASM330LHH_OK)
+        return -70;
 
-    /* Configure the accelero driver */
-    io_ctx.BusType = ISM303DAC_I2C_BUS; /* I2C */
-    io_ctx.Address = ISM303DAC_I2C_ADD_MG;
-    io_ctx.Init = DummyFunc;
-    io_ctx.DeInit = DummyFunc;
-    io_ctx.ReadReg = ReadReg;
-    io_ctx.WriteReg = WriteReg;
-    io_ctx.GetTick = GetTick;
-    io_ctx.Delay = Delay;
+    if (ASM330LHH_GYRO_SetOutputDataRate(&g_IMU_State.accgyro, FUSION_FREQ) != ASM330LHH_OK)
+        return -80;
 
-    if (ISM303DAC_MAG_RegisterBusIO(&g_IMU_State.mag, &io_ctx) != ISM303DAC_OK)
-        return -10;
-
-    if (ISM303DAC_MAG_ReadID(&g_IMU_State.mag, &id) != ISM303DAC_OK)
-        return -20;
-
-    if (id != ISM303DAC_ID_MG)
-        return -30;
-
-    if (ISM303DAC_MAG_Init(&g_IMU_State.mag) != ISM303DAC_OK)
-        return -40;
-
-    if (ISM303DAC_MAG_Enable(&g_IMU_State.mag) != ISM303DAC_OK)
-        return -50;
-
-    return 0;
-}
-
-int A3G4250D_0_Init()
-{
-    A3G4250D_IO_t io_ctx;
-    uint8_t id;
-
-    /* Configure the accelero driver */
-    io_ctx.BusType = A3G4250D_I2C_BUS; /* I2C */
-    io_ctx.Address = A3G4250D_I2C_ADD_L;
-    io_ctx.Init = DummyFunc;
-    io_ctx.DeInit = DummyFunc;
-    io_ctx.ReadReg = ReadReg;
-    io_ctx.WriteReg = WriteReg;
-    io_ctx.GetTick = GetTick;
-    io_ctx.Delay = Delay;
-
-    if (A3G4250D_RegisterBusIO(&g_IMU_State.gyro, &io_ctx) != A3G4250D_OK)
-        return -10;
-
-    if (A3G4250D_ReadID(&g_IMU_State.gyro, &id) != A3G4250D_OK)
-        return -20;
-
-    if (id != A3G4250D_ID)
-        return -30;
-
-    if (A3G4250D_Init(&g_IMU_State.gyro) != ISM303DAC_OK)
-        return -40;
-
-    if (A3G4250D_GYRO_Enable(&g_IMU_State.gyro) != ISM303DAC_OK)
-        return -50;
+    if (ASM330LHH_GYRO_Enable(&g_IMU_State.accgyro) != ASM330LHH_OK)
+        return -90;
 
     return 0;
 }

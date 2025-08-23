@@ -32,6 +32,7 @@ extern "C"
 #define HIP_MSG_DST 0x0A03
 #define HIP_MSG_STB 0x0A04
 #define HIP_MSG_PVT 0x0A05
+#define HIP_MSG_WHT 0x0A06
 
 #define HIP_MSG_CAL_ACC 0x0B01
 #define HIP_MSG_CAL_GYRO 0x0B02
@@ -223,6 +224,20 @@ extern "C"
         HIP_Payload_PVT_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_PVT_t;
+
+    typedef struct
+    {
+        float heading;
+        float ang_velocity;
+        float time;
+    }  __attribute__((packed)) HIP_Payload_WHT_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_WHT_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_WHT_t;
 
     typedef struct
     {

@@ -95,6 +95,7 @@ static void _Controller_SendMFX();
 static void _Controller_SendPAT();
 static void _Controller_SendSTB();
 static void _Controller_SendPVT();
+static void _Controller_SendWHT();
 
 static void _Controller_SendMon();
 
@@ -115,6 +116,7 @@ struct
         {.msgId = HIP_MSG_STB, .emit = _Controller_SendSTB},
         {.msgId = HIP_MSG_MON, .emit = _Controller_SendMon},
         {.msgId = HIP_MSG_PVT, .emit = _Controller_SendPVT},
+        {.msgId = HIP_MSG_WHT, .emit = _Controller_SendWHT},
 };
 
 /******************************************************************************/
@@ -164,6 +166,14 @@ void Controller_Task()
         Controller_HandleFatal();
     }
 
+    rc = IMU_Init(IMU_BUS);
+    if (rc)
+    {
+        Controller_HandleFatal();
+    }
+
+    IMU_SetMode(IMU_Mode_Fusion);
+
     if ((_hWatchdog = xTaskCreateStatic((TaskFunction_t)_Watchdog_Task,
                                         (const char *)"WATCHDOG", WD_STACK_SIZE / sizeof(StackType_t),
                                         NULL, 3, _watchdogStack, &_watchdogBuffer)) == NULL)
@@ -195,14 +205,6 @@ void Controller_Task()
     {
         Controller_HandleFatal();
     }
-
-    rc = IMU_Init(IMU_BUS);
-    if (rc)
-    {
-        Controller_HandleFatal();
-    }
-
-    // IMU_SetMode(IMU_Mode_Fusion); // TODO: comment it!
 
     FlightScenario_Init(FUSION_FREQ);
 
@@ -296,7 +298,7 @@ static void MSX_Process(TimerHandle_t xTimer)
 
     msg.msgContent.meas.us = Controller_GetUS();
 
-    IMU_Process();
+    IMU_Process(&msg.msgContent.meas.imu);
 
     msg.msgContent.meas.wheelsPulses.l = Timer_GetValue(TIM_DEV_L);
     msg.msgContent.meas.wheelsPulses.r = Timer_GetValue(TIM_DEV_R);
@@ -544,6 +546,18 @@ void _Controller_SendPVT()
     pvt.time = s->time;
 
     HostIface_PutData(HIP_MSG_PVT, (uint8_t *)&pvt, sizeof(pvt));
+}
+
+void _Controller_SendWHT()
+{
+    const FS_State_t *s = FlightScenario_GetState();
+
+    HIP_Payload_WHT_t wht;
+    wht.ang_velocity = s->w[2];
+    wht.heading = s->r[2];
+    wht.time = s->time;
+
+    HostIface_PutData(HIP_MSG_WHT, (uint8_t *)&wht, sizeof(wht));
 }
 
 void _Controller_SendMFX()

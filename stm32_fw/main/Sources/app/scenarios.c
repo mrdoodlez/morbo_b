@@ -63,6 +63,7 @@ static struct
     uint32_t epochCounter;
 
     RMA_t enc[FS_Wheel_Cnt];
+    RMA_t omega;
 
     float pwm[FS_Wheel_Cnt];
 
@@ -90,6 +91,8 @@ void FlightScenario_Init(int algoFreq)
 
     _copterState.enc[FS_Wheel_L].windowSz = 16;
     _copterState.enc[FS_Wheel_R].windowSz = 16;
+
+    _copterState.omega.windowSz = 16;
 
     _copterState.kPid.v.kp = 0.5;
     _copterState.kPid.v.ki = 0.05;
@@ -246,18 +249,21 @@ static FlightScenario_Result_t Estimate()
 
             float vlin = (vL + vR) / 2.0;
 
-            float omega_ = _copterState.measBuff[_copterState.prevIdx].w[2];
-            float omega = (vR - vL) / g_params.wheelBase;
-
             float phi_ = _copterState.measBuff[_copterState.prevIdx].r[2];
-            float phi = 0.0;
+            float phi = _copterState.measBuff[_copterState.epochIdx].meas.imu.rotation[0];
 
-            FS_Integate(&phi, phi_, omega_, omega, dt);
+            phi = 360.0 - phi;
+            phi /= 360.0;
+            phi *= 2.0 * M_PI;
 
-            if (phi > 2.0 * M_PI)
-                phi -= 2.0 * M_PI;
-            else if (phi < 0.0)
-                phi += 2.0 * M_PI;
+            float dphi = phi - phi_;
+            while (dphi > M_PI)   dphi -= 2.0 * M_PI;
+            while (dphi < -M_PI)  dphi += 2.0 * M_PI;
+
+            float omega = dphi / dt;
+
+            FS_RmaUpdate(&_copterState.omega, omega);
+            omega = _copterState.omega.val;
 
             Vec3D_t *v_ = (Vec3D_t*)(_copterState.measBuff[_copterState.prevIdx].v);
             Vec3D_t *p_ = (Vec3D_t*)(_copterState.measBuff[_copterState.prevIdx].p);

@@ -156,6 +156,7 @@ MSG_MFX = 0x0A02
 MSG_DST = 0x0A03
 MSG_STB = 0x0A04
 MSG_PVT = 0x0A05
+MSG_WHT = 0x0A06
 
 MSG_CAL_ACC = 0x0B01
 MSG_CAL_GYRO = 0x0B02
@@ -374,6 +375,10 @@ def handle_pvt(payload):
 
     time = pvt_data[6]
 
+def handle_wht(payload):
+    global yaw
+    wht_data = struct.unpack('<3f', b''.join(payload))
+    yaw.append(wht_data[0])
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -395,6 +400,8 @@ def em_command(msgId, msgPeriod, port):
         msgId = MSG_STB
     elif msgId == "pvt":
         msgId = MSG_PVT
+    elif msgId == "wht":
+        msgId = MSG_WHT
     else:
         print("command not supported")
         return
@@ -675,6 +682,8 @@ def listener_function(name, port):
                     handle_stb(payload)
                 elif cmd == MSG_PVT:
                     handle_pvt(payload)
+                elif cmd == MSG_WHT:
+                    handle_wht(payload)
                 else:
                     print("unknown message: ", cmd)
 
@@ -770,7 +779,7 @@ def visio_track_function(name):
         trace_points.append((x, y))
 
         # --- heading: CCW-positive, 0° along +X ---
-        heading_deg = (math.degrees(math.atan2(vy, vx)) % 360) if (vx != 0.0 or vy != 0.0) else heading_deg if 'heading_deg' in locals() else 0.0
+        heading_deg = math.degrees(yaw[-1])
 
         # --- draw ---
         screen.fill((230,230,230))

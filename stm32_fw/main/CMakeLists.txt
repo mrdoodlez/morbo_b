@@ -104,10 +104,8 @@ set (PROJECT_SOURCES
 	${FREERTOS_DIR}/Source/timers.c
 	${FREERTOS_DIR}/Source/queue.c
 	#${FREERTOS_DIR}/Source/portable/MemMang/heap_4.c
-	${MEMS_DIR}/Drivers/BSP/Components/ism303dac/ism303dac.c
-	${MEMS_DIR}/Drivers/BSP/Components/ism303dac/ism303dac_reg.c
-	${MEMS_DIR}/Drivers/BSP/Components/a3g4250d/a3g4250d.c
-	${MEMS_DIR}/Drivers/BSP/Components/a3g4250d/a3g4250d_reg.c
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh.c
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh/asm330lhh_reg.c
 	)
 
 set (PROJECT_DEFINES
@@ -128,8 +126,7 @@ set (PROJECT_INCLUDES
 	${FREERTOS_DIR}/Source/portable/GCC/ARM_CM4F
 	${MEMS_DIR}/Middlewares/ST/STM32_MotionFX_Library/Inc
 	${MEMS_DIR}/Middlewares/ST/STM32_MotionAC_Library/Inc
-	${MEMS_DIR}/Drivers/BSP/Components/a3g4250d
-	${MEMS_DIR}/Drivers/BSP/Components/ism303dac
+	${MEMS_DIR}/Drivers/BSP/Components/asm330lhh
 	)
 
 ############ MODIFY ACCORDING TO REQUIREMENTS) ########################

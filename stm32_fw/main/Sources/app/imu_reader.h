@@ -3,6 +3,7 @@
 
 #include "main.h"
 #include "mhelpers.h"
+#include "motion_fx.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -33,7 +34,7 @@ extern "C"
 
     int IMU_Init(uint8_t dev);
 
-    void IMU_Process();
+    void IMU_Process(MFX_output_t* fxOut);
 
     int IMU_SetMode(IMU_Mode_t workmode);
 

@@ -50,8 +50,7 @@ extern "C"
 #define TIM_DEV_L 4
 #define TIM_DEV_R 2
 
-#define FUSION_FREQ 50
-#define CALIB_FREQ 50
+#define FUSION_FREQ 100
 
 #ifdef __cplusplus
 }

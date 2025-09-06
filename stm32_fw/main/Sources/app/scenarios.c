@@ -12,6 +12,7 @@
 static FlightScenario_Result_t Estimate();
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *);
+static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *);
 
 static const struct
 {
@@ -36,22 +37,34 @@ typedef FlightScenario_Result_t (*FlightScenarioFunc_t)(ControlOutputs_t *output
 
 typedef struct
 {
-    uint64_t startUs;
-    FlightScenarioStatus_t status;
     FlightScenarioFunc_t exec;
-    FlightScenario_t type;
+    uint32_t flags;
 } FlightScenarioDesc_t;
 
-FlightScenarioFunc_t _execs[FlightScenario_Total] =
+typedef struct
+{
+    uint64_t startUs;
+    FlightScenarioStatus_t status;
+    FlightScenarioDesc_t desc;
+} FlightScenarioCtx_t;
+
+typedef enum
+{
+    FlightScenarioFlags_IsInfinite = 1 << 0,
+
+} FlightScenarioFlags_t;
+
+static const FlightScenarioDesc_t _descs[FlightScenario_Total] =
     {
-        NULL,
-        FlightScenarioFunc_Debug,
-        FlightScenarioFunc_VelSet,
+        {0, 0},
+        {FlightScenarioFunc_Debug, FlightScenarioFlags_IsInfinite},
+        {FlightScenarioFunc_VelSet, FlightScenarioFlags_IsInfinite},
+        {FlightScenarioFunc_GoTo, FlightScenarioFlags_IsInfinite},
 };
 
 static struct
 {
-    FlightScenarioDesc_t scenarios[NUM_PROGRAMS];
+    FlightScenarioCtx_t scenarios[NUM_PROGRAMS];
     uint32_t scCounter;
 
     FS_State_t measBuff[FS_NUM_EPOCHS];
@@ -67,12 +80,32 @@ static struct
 
     float pwm[FS_Wheel_Cnt];
 
+    float initPhi;
+
     struct
     {
-        float v;
-        float w;
-        char stop;
-    } cmdVel;
+        struct
+        {
+            float v;
+            float w;
+            char stop;
+        } cmd;
+    } velController;
+
+    struct
+    {
+        struct
+        {
+            float x;
+            float y;
+            float phi;
+            char phiSet;
+        } cmd;
+
+        uint64_t replanUs;
+
+        char newInput;
+    } posController;
 
     FS_PID_Koeffs_t kPid;
 
@@ -101,6 +134,8 @@ void FlightScenario_Init(int algoFreq)
     _copterState.kPid.w.ki = 0.01;
 
     _copterState.isStatic = 1;
+
+    _copterState.initPhi = 100500;
 }
 
 void FlightScenario_BeginEpoch()
@@ -118,17 +153,15 @@ void FlightScenario_EndEpoch()
     // TODO; do nothing
 }
 
-// TODO: implement preemtive scenarios!
 int FlightScenario_SetScenario(FlightScenario_t s)
 {
     uint32_t curr = _copterState.scCounter;
-    uint32_t set = (_copterState.scenarios[curr].status != FlightScenarioStatus_Running) // || isPreemtive
+    uint32_t set = ((_copterState.scenarios[curr].status != FlightScenarioStatus_Running) || ((_copterState.scenarios[curr].desc.flags & FlightScenarioFlags_IsInfinite) != 0))
                        ? curr
                        : (curr + 1) % NUM_PROGRAMS;
 
-    _copterState.scenarios[set].type = s;
     _copterState.scenarios[set].status = FlightScenarioStatus_Pending;
-    _copterState.scenarios[set].exec = _execs[s];
+    _copterState.scenarios[set].desc = _descs[s];
 
     return 0;
 }
@@ -150,16 +183,31 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
     }
     else if (type == FlightScenario_Input_VelCmd)
     {
-        struct VelCmd
-        {
-            float v;
-            float w;
-            uint32_t flags;
-        };
+        _copterState.velController.cmd.v = ((HIP_Payload_SetVels_t *)data)->v;
+        _copterState.velController.cmd.w = ((HIP_Payload_SetVels_t *)data)->w;
+        _copterState.velController.cmd.stop = ((HIP_Payload_SetVels_t *)data)->flags != 0;
+    }
+    else if (type == FlightScenario_Input_PosCmd)
+    {
+        HIP_Payload_SetPos_t *cmd = (HIP_Payload_SetPos_t *)data;
 
-        _copterState.cmdVel.v = ((struct VelCmd*)data)->v;
-        _copterState.cmdVel.w = ((struct VelCmd*)data)->w;
-        _copterState.cmdVel.stop = ((struct VelCmd*)data)->flags != 0;
+        if ((cmd->flags & HIP_SetPos_Flags_IsRelative) != 0)
+        {
+            // TODO: fix relative set according to phi
+            _copterState.posController.cmd.x = _copterState.measBuff[_copterState.epochIdx].p[0] + cmd->x;
+            _copterState.posController.cmd.y = _copterState.measBuff[_copterState.epochIdx].p[1] + cmd->y;
+            _copterState.posController.cmd.phi = _copterState.measBuff[_copterState.epochIdx].r[2] + cmd->phi;
+        }
+        else
+        {
+            _copterState.posController.cmd.x = cmd->x;
+            _copterState.posController.cmd.y = cmd->y;
+            _copterState.posController.cmd.phi = cmd->phi;
+        }
+
+        _copterState.posController.cmd.phiSet = cmd->flags & HIP_SetPos_Flags_PhiSet;
+
+        _copterState.posController.newInput = 1;
     }
 
     return 0;
@@ -199,7 +247,7 @@ FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
     FlightScenario_Result_t res = FlightScenario_Result_None;
 
     if (_copterState.scenarios[curr].status == FlightScenarioStatus_Running)
-        res = _copterState.scenarios[curr].exec(output);
+        res = _copterState.scenarios[curr].desc.exec(output);
 
     return res;
 }
@@ -238,8 +286,7 @@ static FlightScenario_Result_t Estimate()
             dL = _copterState.enc[FS_Wheel_L].val;
             dR = _copterState.enc[FS_Wheel_R].val;
 
-            float dt = _copterState.measBuff[_copterState.epochIdx].time
-                - _copterState.measBuff[_copterState.prevIdx].time;
+            float dt = _copterState.measBuff[_copterState.epochIdx].time - _copterState.measBuff[_copterState.prevIdx].time;
 
             float wL = dL / dt;
             float wR = dR / dt;
@@ -252,24 +299,31 @@ static FlightScenario_Result_t Estimate()
             float phi_ = _copterState.measBuff[_copterState.prevIdx].r[2];
             float phi = _copterState.measBuff[_copterState.epochIdx].meas.imu.rotation[0];
 
-            phi = 360.0 - phi;
+            if (fabs(_copterState.initPhi) > 365)
+                _copterState.initPhi = phi;
+
+            phi -= _copterState.initPhi;
+
+            phi = -phi;
             phi /= 360.0;
             phi *= 2.0 * M_PI;
 
             float dphi = phi - phi_;
-            while (dphi > M_PI)   dphi -= 2.0 * M_PI;
-            while (dphi < -M_PI)  dphi += 2.0 * M_PI;
+            while (dphi > M_PI)
+                dphi -= 2.0 * M_PI;
+            while (dphi < -M_PI)
+                dphi += 2.0 * M_PI;
 
             float omega = dphi / dt;
 
             FS_RmaUpdate(&_copterState.omega, omega);
             omega = _copterState.omega.val;
 
-            Vec3D_t *v_ = (Vec3D_t*)(_copterState.measBuff[_copterState.prevIdx].v);
-            Vec3D_t *p_ = (Vec3D_t*)(_copterState.measBuff[_copterState.prevIdx].p);
+            Vec3D_t *v_ = (Vec3D_t *)(_copterState.measBuff[_copterState.prevIdx].v);
+            Vec3D_t *p_ = (Vec3D_t *)(_copterState.measBuff[_copterState.prevIdx].p);
 
-            Vec3D_t *v = (Vec3D_t*)(_copterState.measBuff[_copterState.epochIdx].v);
-            Vec3D_t *p = (Vec3D_t*)(_copterState.measBuff[_copterState.epochIdx].p);
+            Vec3D_t *v = (Vec3D_t *)(_copterState.measBuff[_copterState.epochIdx].v);
+            Vec3D_t *p = (Vec3D_t *)(_copterState.measBuff[_copterState.epochIdx].p);
 
             v->x[0] = vlin * cos(phi);
             v->x[1] = vlin * sin(phi);
@@ -300,9 +354,9 @@ static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *output
     return FlightScenario_Result_OK;
 }
 
-#define PMAX    0.9
+#define PMAX 0.9
 
-static inline float truncate( float x)
+static inline float truncate(float x)
 {
     if (x > PMAX)
         x = PMAX;
@@ -313,7 +367,7 @@ static inline float truncate( float x)
 
 static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *output)
 {
-    if (_copterState.cmdVel.stop)
+    if (_copterState.velController.cmd.stop)
     {
         _copterState.iSum.v = 0.0;
         _copterState.iSum.w = 0.0;
@@ -323,8 +377,8 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *outpu
     }
     else
     {
-        float el = _copterState.cmdVel.v - _copterState.measBuff[_copterState.epochIdx].vlin;
-        float er = _copterState.cmdVel.w - _copterState.measBuff[_copterState.epochIdx].w[2];
+        float el = _copterState.velController.cmd.v - _copterState.measBuff[_copterState.epochIdx].vlin;
+        float er = _copterState.velController.cmd.w - _copterState.measBuff[_copterState.epochIdx].w[2];
 
         _copterState.iSum.v += el;
         _copterState.iSum.w += er;
@@ -338,6 +392,102 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *outpu
 
     _copterState.pwm[FS_Wheel_L] = output->pwm[FS_Wheel_L];
     _copterState.pwm[FS_Wheel_R] = output->pwm[FS_Wheel_R];
+
+    return FlightScenario_Result_OK;
+}
+
+#define EPS_X 0.2
+#define EPS_PHI 0.087
+#define REPLAN_DT 0.2e6
+#define V_MAX 0.5
+#define W_MAX 1.57
+
+static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
+{
+    uint64_t currUs = Controller_GetUS();
+
+    float phi0 = _copterState.measBuff[_copterState.epochIdx].r[2];
+
+    float dx = _copterState.posController.cmd.x - _copterState.measBuff[_copterState.epochIdx].p[0];
+    float dy = _copterState.posController.cmd.y - _copterState.measBuff[_copterState.epochIdx].p[1];
+    float dphi = _copterState.posController.cmd.phiSet ? (_copterState.posController.cmd.phi - phi0) : 0.0;
+
+    while (dphi > M_PI)
+        dphi -= 2.0 * M_PI;
+    while (dphi < -M_PI)
+        dphi += 2.0 * M_PI;
+
+    if (((fabs(dx) + fabs(dy)) < EPS_X) && (fabs(dphi) < EPS_PHI))
+    {
+        _copterState.iSum.v = 0.0;
+        _copterState.iSum.w = 0.0;
+
+        output->pwm[FS_Wheel_R] = 0.0;
+        output->pwm[FS_Wheel_L] = 0.0;
+    }
+    else
+    {
+        if (_copterState.posController.newInput || ((currUs - _copterState.posController.replanUs) > REPLAN_DT))
+        {
+            if (fabs(dy) < EPS_X / 2)
+            {
+                if (fabs(dx) < EPS_X / 2) // pure rotation
+                {
+                    float dT = fabs(dphi) / W_MAX;
+                    _copterState.velController.cmd.v = 0;
+                    _copterState.velController.cmd.w = fabs(dphi) > EPS_PHI ? dphi / dT : 0.0;
+                }
+                else // straight line case
+                {
+                    float arcLen = fabs(dx);
+                    float dT = arcLen / V_MAX;
+
+                    _copterState.velController.cmd.v = dx / dT;
+                    _copterState.velController.cmd.w = 0;
+                }
+            }
+            else
+            {
+                float c0 = cos(phi0);
+                float s0 = sin(phi0);
+                float dxb = c0 * dx + s0 * dy;
+                float dyb = -s0 * dx + c0 * dy;
+
+                float theta = 2.0f * atan2f(dyb, dxb);
+                float s = sin(theta);
+                float c = cos(theta);
+                float denom1 = (1.0f - c);
+
+                float k;
+                if (fabs(denom1) > 1.0e-6f)
+                {
+                    k = dyb / denom1;
+                }
+                else if (fabs(s) > 1.0e-6f)
+                {
+                    k = dxb / s;
+                }
+                else
+                {
+                    return FlightScenario_Result_Error;
+                }
+
+                float dT = fabs(theta) / W_MAX;
+                _copterState.velController.cmd.w = theta / dT;
+                _copterState.velController.cmd.v = k * _copterState.velController.cmd.w;
+
+                if (_copterState.velController.cmd.v > V_MAX)
+                    _copterState.velController.cmd.v = V_MAX;
+                else if (_copterState.velController.cmd.v < -V_MAX)
+                    _copterState.velController.cmd.v = -V_MAX;
+            }
+
+            _copterState.posController.replanUs = Controller_GetUS();
+            _copterState.posController.newInput = 0;
+        }
+
+        return FlightScenarioFunc_VelSet(output);
+    }
 
     return FlightScenario_Result_OK;
 }

@@ -25,6 +25,7 @@ extern "C"
 #define HIP_MSG_RESET_POS 0x0500
 #define HIP_MSG_SET_PID 0x0600
 #define HIP_MSG_SET_VELS 0x0700
+#define HIP_MSG_SET_POS 0x0701
 
 #define HIP_MSG_PAT 0x0A00
 #define HIP_MSG_ACC 0x0A01
@@ -38,6 +39,8 @@ extern "C"
 #define HIP_MSG_CAL_GYRO 0x0B02
 
 #define HIP_MSG_MON 0x0C00
+
+#define HIP_MSG_AZ5 0xFFF0
 
     /******************************************************************************/
 
@@ -260,6 +263,13 @@ extern "C"
         uint16_t crc;
     } __attribute__((packed)) HIP_ResetPos_t;
 
+    typedef struct
+    {
+        HIP_Header_t header;
+        uint8_t dummy;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_AZ5_t;
+
     typedef enum
     {
         HIP_SetVels_Flags_FullStop = 1 << 0,
@@ -269,7 +279,7 @@ extern "C"
     {
         float v;
         float w;
-        uint32_t flags;
+        uint8_t flags;
     } __attribute__((packed)) HIP_Payload_SetVels_t;
 
     typedef struct
@@ -278,6 +288,27 @@ extern "C"
         HIP_Payload_SetVels_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_SetVels_t;
+
+    typedef enum
+    {
+        HIP_SetPos_Flags_IsRelative = 1 << 0,
+        HIP_SetPos_Flags_PhiSet = 1 << 1,
+    } HIP_SetPos_Flags_t;
+
+    typedef struct
+    {
+        float x;
+        float y;
+        float phi;
+        uint8_t flags;
+    } __attribute__((packed)) HIP_Payload_SetPos_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_SetPos_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_SetPos_t;
 
     typedef struct
     {

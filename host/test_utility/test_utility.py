@@ -141,11 +141,16 @@ LEN_WM = 1 + 1
 CMD_RP = 0x0500
 LEN_RP = 1
 
+CMD_AZ5 = 0xFFF0
+
 CMD_SET_PID = 0x0600
 LEN_SET_PID = (3 * 3 + 1) * 4
 
 CMD_SET_VELS = 0x0700
-LEN_SET_VELS = 4 + 4 + 4
+LEN_SET_VELS = 4 + 4 + 1
+
+CMD_SET_POS = 0x0701
+LEN_SET_POS = 4 + 4 + 4 + 1
 
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
@@ -437,8 +442,10 @@ def wm_command(wm, fc, port):
 
     if fc == "dbg":
         fsMode = 1
-    if fc == "vc":
+    elif fc == "vc":
         fsMode = 2
+    elif fc == "gt":
+        fsMode = 3
 
     cmd = CMD_WM
     len = LEN_WM
@@ -474,6 +481,20 @@ def reset_pos_command(port):
         print("WRN: command not acked")
 
     ackRx = ackAwait = -1
+
+def az5_command(port):
+    global doExit
+    cmd = CMD_AZ5
+    len = LEN_RP
+
+    dummy = 0
+
+    rp = struct.pack('<2sHHBH', b'mb', cmd, len, dummy, CRC)
+    port.write(rp)
+
+    time.sleep(0.5)
+
+    doExit = True
 
 def set_pid_command(port):
 
@@ -526,10 +547,32 @@ def set_vels_command(port, v, w, stop):
     if (stop):
         flags = 1
 
-    sp = struct.pack('<2sHHffIH', b'mb', cmd, len, v, w, flags, CRC)
+    sp = struct.pack('<2sHHffBH', b'mb', cmd, len, v, w, flags, CRC)
     port.write(sp)
 
-    ackAwait = CMD_SET_PID
+    ackAwait = CMD_SET_VELS
+
+    time.sleep(0.5)
+
+    if ackRx != ackAwait:
+        print("WRN: command not acked")
+
+    ackRx = ackAwait = -1
+
+def set_pos_command(port, x, y, phi, rel):
+    global ackRx, ackAwait
+
+    cmd = CMD_SET_POS
+    len = LEN_SET_POS
+
+    flags = 0
+    if (rel):
+        flags = 1
+
+    sp = struct.pack('<2sHHfffBH', b'mb', cmd, len, x, y, phi, flags, CRC)
+    port.write(sp)
+
+    ackAwait = CMD_SET_POS
 
     time.sleep(0.5)
 
@@ -578,6 +621,8 @@ def console_function(name, port):
                 wm_command(command[1], command[2], port)
             elif command[0] == "rp":
                 reset_pos_command(port)
+            elif command[0] == "5":
+                az5_command(port)
             elif command[0] == "sp":
                 set_pid_command(port)
             elif command[0] == "v+":
@@ -596,6 +641,11 @@ def console_function(name, port):
                 v = 0.0
                 w = 0.0
                 set_vels_command(port, v, w, True)
+            elif command[0] == "pd":
+                dx = float(command[1])
+                dy = float(command[2])
+                dphi = math.radians(float(command[3]))
+                set_pos_command(port, dx, dy, dphi, True)
             elif command[0] == 'q':
                 doExit = True
 

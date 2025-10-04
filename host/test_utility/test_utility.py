@@ -581,9 +581,12 @@ def set_pos_command(port, x, y, phi, rel):
 
     ackRx = ackAwait = -1
 
+noPingCount = 0
+
 def pinger_function(name, port):
     global pingSeq
     global doExit
+    global noPingCount
     while not doExit:
         cmd = CMD_PING
         len = LEN_PING
@@ -594,7 +597,13 @@ def pinger_function(name, port):
         time.sleep(0.5)
 
         if pingRx != pingSeq:
-            print("WRN: no ping")
+            noPingCount = noPingCount + 1
+        else:
+            noPingCount = 0
+
+        if noPingCount > 5:
+            print("Connection lost!")
+            doExit = True
 
         pingSeq = pingSeq + 1
 
@@ -646,6 +655,12 @@ def console_function(name, port):
                 dy = float(command[2])
                 dphi = math.radians(float(command[3]))
                 set_pos_command(port, dx, dy, dphi, True)
+            elif command[0] == "pa":
+                x = float(command[1])
+                y = float(command[2])
+                phi = math.radians(float(command[3]))
+                set_pos_command(port, x, y, phi, False)
+
             elif command[0] == 'q':
                 doExit = True
 

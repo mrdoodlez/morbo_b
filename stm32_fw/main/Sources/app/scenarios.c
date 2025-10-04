@@ -193,10 +193,14 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
 
         if ((cmd->flags & HIP_SetPos_Flags_IsRelative) != 0)
         {
-            // TODO: fix relative set according to phi
-            _copterState.posController.cmd.x = _copterState.measBuff[_copterState.epochIdx].p[0] + cmd->x;
-            _copterState.posController.cmd.y = _copterState.measBuff[_copterState.epochIdx].p[1] + cmd->y;
-            _copterState.posController.cmd.phi = _copterState.measBuff[_copterState.epochIdx].r[2] + cmd->phi;
+            float c = cosf(_copterState.measBuff[_copterState.epochIdx].r[2]);
+            float s = sinf(_copterState.measBuff[_copterState.epochIdx].r[2]);
+            _copterState.posController.cmd.x
+                = _copterState.measBuff[_copterState.epochIdx].p[0] + c * cmd->x - s * cmd->y;
+            _copterState.posController.cmd.y
+                = _copterState.measBuff[_copterState.epochIdx].p[1] + s * cmd->x + c * cmd->y;
+            _copterState.posController.cmd.phi
+                = _copterState.measBuff[_copterState.epochIdx].r[2] + cmd->phi;
         }
         else
         {
@@ -399,7 +403,7 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *outpu
 #define EPS_X 0.2
 #define EPS_PHI 0.087
 #define REPLAN_DT 0.2e6
-#define V_MAX 0.5
+#define V_MAX 0.3
 #define W_MAX 1.57
 
 static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
@@ -429,9 +433,14 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
     {
         if (_copterState.posController.newInput || ((currUs - _copterState.posController.replanUs) > REPLAN_DT))
         {
-            if (fabs(dy) < EPS_X / 2)
+            float c0 = cos(phi0);
+            float s0 = sin(phi0);
+            float dxb = c0 * dx + s0 * dy;
+            float dyb = -s0 * dx + c0 * dy;
+
+            if (fabs(dyb) < EPS_X / 2)
             {
-                if (fabs(dx) < EPS_X / 2) // pure rotation
+                if (fabs(dxb) < EPS_X / 2) // pure rotation
                 {
                     float dT = fabs(dphi) / W_MAX;
                     _copterState.velController.cmd.v = 0;
@@ -439,21 +448,19 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
                 }
                 else // straight line case
                 {
-                    float arcLen = fabs(dx);
+                    float arcLen = fabs(dxb);
                     float dT = arcLen / V_MAX;
 
-                    _copterState.velController.cmd.v = dx / dT;
+                    _copterState.velController.cmd.v = dxb / dT;
                     _copterState.velController.cmd.w = 0;
                 }
             }
             else
             {
-                float c0 = cos(phi0);
-                float s0 = sin(phi0);
-                float dxb = c0 * dx + s0 * dy;
-                float dyb = -s0 * dx + c0 * dy;
-
                 float theta = 2.0f * atan2f(dyb, dxb);
+                if (theta >  M_PI) theta -= 2.0f * M_PI;
+                if (theta < -M_PI) theta += 2.0f * M_PI;
+
                 float s = sin(theta);
                 float c = cos(theta);
                 float denom1 = (1.0f - c);
@@ -472,7 +479,9 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
                     return FlightScenario_Result_Error;
                 }
 
-                float dT = fabs(theta) / W_MAX;
+                float arcLen = fabs(dxb) + fabs(dyb);
+                float dT = arcLen / V_MAX;
+
                 _copterState.velController.cmd.w = theta / dT;
                 _copterState.velController.cmd.v = k * _copterState.velController.cmd.w;
 

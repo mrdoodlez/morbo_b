@@ -12,8 +12,6 @@ extern "C"
 
 void Controller_Task();
 
-void Controller_NewCommand(const HIP_Cmd_t* cmd);
-
 void Controller_HandleFatal();
 
 uint64_t Controller_GetUS();

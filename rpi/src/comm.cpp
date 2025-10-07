@@ -7,8 +7,3 @@ void Comm_Start()
         HostIface_Listen();
     }).detach();
 }
-
-void Controller_NewCommand(const HIP_Cmd_t* cmd)
-{
-
-}

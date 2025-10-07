@@ -11,7 +11,7 @@ void Serial_Init(int dev);
 
 size_t Serial_Read(int dev, uint8_t* buff, size_t count);
 
-size_t Serial_Write(int dev, uint8_t* buff, size_t count);
+size_t Serial_Write(int dev, const uint8_t* buff, size_t count);
 
 #ifdef __cplusplus
 }

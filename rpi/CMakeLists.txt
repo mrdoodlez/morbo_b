@@ -8,6 +8,7 @@ add_executable(vpos
     src/main.cpp
     src/comm.cpp
     src/serial.cpp
+    src/controller.cpp
     ../shared/host_interface.c
 )
 

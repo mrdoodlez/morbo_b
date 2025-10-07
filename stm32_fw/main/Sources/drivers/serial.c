@@ -47,7 +47,7 @@ size_t Serial_Read(int dev, uint8_t *buff, size_t count)
     return 0;
 }
 
-size_t Serial_Write(int dev, uint8_t *buff, size_t count)
+size_t Serial_Write(int dev, const uint8_t *buff, size_t count)
 {
     if (dev == 1)
     {
@@ -90,7 +90,7 @@ void USART1_IRQHandler(void)
 static void MX_USART1_UART_Init(void)
 {
     huart1.Instance = USART1;
-    huart1.Init.BaudRate = 9600; // 115200;
+    huart1.Init.BaudRate = 115200;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;

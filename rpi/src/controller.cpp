@@ -2,93 +2,94 @@
 #include "comm.h"
 #include "host_interface_cmds.h"
 #include "host_interface.h"
-#include <thread>
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
 
-static void Pinger();
-static void _Pinger_Start();
+#include <iostream>
+
+static int _SetWorkMode(uint8_t iMode, uint8_t fcMode);
+static int _EnableMessage(uint16_t msgId, uint16_t periodMs);
+
+static int _RoverConfig();
+
+enum  IMU_Mode_t
+{
+    IMU_Mode_Idle,      /*0*/
+    IMU_Mode_CalAcc,    /*1*/
+    IMU_Mode_CalGyro,   /*2*/
+    IMU_Mode_CalMag,    /*3*/
+    IMU_Mode_Fusion,    /*4*/
+};
+
+enum  FlightScenario_t
+{
+    FlightScenario_None,
+    FlightScenario_Debug,
+    FlightScenario_VelSet,
+    FlightScenario_GoTo,
+
+    FlightScenario_Total,
+};
 
 int Controller_Start()
 {
     Comm_Start();
 
+    int rc = _RoverConfig();
+    if (rc)
+    {
+        std::cout << "Rover config faild, rc: " << rc << std::endl;
+        return -10;
+    }
+
     return 0;
 }
 
-void Controller_NewCommand(const HIP_Cmd_t* cmd)
+static int _RoverConfig()
 {
+    if (_SetWorkMode(IMU_Mode_Fusion, FlightScenario_GoTo))
+        return -10;
 
+    if (_EnableMessage(HIP_MSG_PVT, 100))
+        return -20;
+
+    if (_EnableMessage(HIP_MSG_WHT, 100))
+        return -30;
+
+    return 0;
 }
 
-/*******************************************************************************
- *
- *  Pinger tracker code here
- */ 
+/*******************************************************************************/
 
-std::mutex              g_mtx;
-std::condition_variable g_cv;
-
-uint16_t g_lastSeq = 0;
-uint64_t g_seenVer = 0;
-
-static void _OnPong(uint16_t seq)
+static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
 {
-    std::lock_guard<std::mutex> lk(g_mtx);
-    g_lastSeq = seq;
-    ++g_seenVer;
-    g_cv.notify_all();
+    HostIface_PutData(id, buff, len);
+    HostIface_Send();
+
+    bool isAck;
+    int rc = WaitForAck(id, std::chrono::milliseconds(500), isAck);
+
+    if ((rc == 0) && isAck)
+        return 0;
+
+    std::cout << "command " << id << " not acked" << std::endl;
+
+    return -10;
 }
 
-static int _WaitForPong(uint16_t seq, std::chrono::milliseconds timeout)
+static int _SetWorkMode(uint8_t iMode, uint8_t fcMode)
 {
-    using namespace std::chrono;
-    const auto deadline = steady_clock::now() + timeout;
+    HIP_Payload_WM_t wm;
+    wm.fcMode = fcMode;
+    wm.imuMode = iMode;
 
-    std::unique_lock<std::mutex> lk(g_mtx);
-
-    uint64_t startVer = g_seenVer;
-    while (steady_clock::now() < deadline)
-    {
-        g_cv.wait_until(lk, deadline, [&] { return g_seenVer != startVer; });
-
-        if (steady_clock::now() >= deadline)
-            break;
-
-        if (g_lastSeq == seq)
-            return 0;
-
-        startVer = g_seenVer;
-    }
-
-    return -1;
+    return _SendCommand(HIP_MSG_WM, (uint8_t *)&wm, sizeof(wm));
 }
 
-static void _Pinger_Start()
+static int _EnableMessage(uint16_t msgId, uint16_t periodMs)
 {
-    std::thread([] {
-        _Pinger_Start();
-    }).detach();
+    HIP_Payload_EM_t em;
+
+    em.msgId = msgId;
+    em.msgPeriod = periodMs / 100;
+
+    return _SendCommand(HIP_MSG_EM, (uint8_t *)&em, sizeof(em));
 }
-
-static void _Pinger()
-{
-    uint16_t txSeq = 0;
-    for (;;)
-    {
-        HostIface_PutData(HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
-        HostIface_Send();
-
-        if (!_WaitForPong(txSeq, std::chrono::milliseconds(200)))
-        {
-            // TODO: handle error
-        }
-
-        txSeq++;
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-}
-
-/******************************************************************************/

@@ -65,15 +65,17 @@ int Serial_Init(const char* const dev)
     return 0;
 }
 
-size_t Serial_Read(int dev, uint8_t* buff, size_t count)
+size_t Serial_Read(int unused, uint8_t* buff, size_t count)
 {
-    if (dev < 0 || !buff || count == 0)
+    (void)unused;
+
+    if (g_fd < 0 || !buff || count == 0)
         return static_cast<size_t>(-1);
 
     size_t got = 0;
     while (got < count)
     {
-        ssize_t n = ::read(dev, buff + got, count - got);
+        ssize_t n = ::read(g_fd, buff + got, count - got);
         if (n > 0)
         {
             got += static_cast<size_t>(n);
@@ -93,9 +95,11 @@ size_t Serial_Read(int dev, uint8_t* buff, size_t count)
     return got;
 }
 
-size_t Serial_Write(int dev, const uint8_t* buff, size_t count)
+size_t Serial_Write(int unused, const uint8_t* buff, size_t count)
 {
-    if (dev < 0 || !buff || count == 0)
+    (void)unused;
+
+    if (g_fd < 0 || !buff || count == 0)
         return static_cast<size_t>(-1);
 
     std::lock_guard<std::mutex> lk(g_write_mtx);
@@ -103,7 +107,7 @@ size_t Serial_Write(int dev, const uint8_t* buff, size_t count)
     size_t sent = 0;
     while (sent < count)
     {
-        ssize_t n = ::write(dev, buff + sent, count - sent);
+        ssize_t n = ::write(g_fd, buff + sent, count - sent);
         if (n > 0)
         {
             sent += static_cast<size_t>(n);

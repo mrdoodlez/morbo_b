@@ -7,6 +7,7 @@
 
 int main()
 {
+    std::cout << "vpos starts\n";
     int rc = 0;
     if ((rc = Serial_Init("/dev/ttyUSB0")) != 0)
     {

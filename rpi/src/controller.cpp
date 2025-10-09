@@ -1,5 +1,6 @@
 #include "controller.h"
 #include "comm.h"
+#include "vodom.h"
 #include "host_interface_cmds.h"
 #include "host_interface.h"
 
@@ -29,11 +30,18 @@ enum  FlightScenario_t
     FlightScenario_Total,
 };
 
-int Controller_Start()
+int Controller_Start(const ControllerParams& params)
 {
     Comm_Start();
 
     int rc = _RoverConfig();
+    if (rc)
+    {
+        std::cout << "Rover config faild, rc: " << rc << std::endl;
+        return -10;
+    }
+
+    rc = Vodom_Start(params.videoDev);
     if (rc)
     {
         std::cout << "Rover config faild, rc: " << rc << std::endl;

@@ -15,7 +15,8 @@ int main()
         return -10;
     }
 
-    if ((rc = Controller_Start()) != 0)
+    ControllerParams params;
+    if ((rc = Controller_Start(params)) != 0)
     {
         std::cout << "controller start error: " << rc << std::endl;
         return -20;

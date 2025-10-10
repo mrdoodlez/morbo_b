@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # -----------------------------
 # Find OpenCV
 # -----------------------------
-find_package(OpenCV REQUIRED core imgproc videoio highgui)
+find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d)
 
 # -----------------------------
 # Source files
@@ -18,6 +18,7 @@ add_executable(vpos
     src/serial.cpp
     src/controller.cpp
     src/vodom.cpp
+    src/params.cpp
     ../shared/host_interface.c
 )
 
@@ -35,6 +36,7 @@ target_include_directories(vpos PRIVATE
 # -----------------------------
 target_link_libraries(vpos
     ${OpenCV_LIBS}
+    atomic
 )
 
 message(STATUS "OpenCV includes: ${OpenCV_INCLUDE_DIRS}")

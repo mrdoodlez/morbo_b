@@ -1,7 +1,6 @@
 #include <thread>
 #include "host_interface_cmds.h"
 #include "host_interface.h"
-#include <thread>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>

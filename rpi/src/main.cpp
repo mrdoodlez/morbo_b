@@ -16,6 +16,7 @@ int main()
     }
 
     ControllerParams params;
+    params.videoDev = "/dev/video0";
     if ((rc = Controller_Start(params)) != 0)
     {
         std::cout << "controller start error: " << rc << std::endl;

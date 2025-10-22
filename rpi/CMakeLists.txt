@@ -19,6 +19,7 @@ add_executable(vpos
     src/controller.cpp
     src/vodom.cpp
     src/params.cpp
+    src/logger.cpp
     ../shared/host_interface.c
 )
 

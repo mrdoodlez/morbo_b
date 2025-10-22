@@ -1,5 +1,6 @@
 #include "vodom.h"
 #include "params.h"
+#include "logger.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -157,12 +158,31 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
     uint32_t nFrame = 0;
 
-    // pre-loop
+    auto sane = [](int k)
+    {
+        k = std::max(1, k);
+        if ((k % 2) == 0)
+            k += 1;          // force odd
+        k = std::min(k, 51); // cap (adjust if needed)
+        return k;
+    };
+    int kOpenSz = sane(P.morph_open);
+    int kCloseSz = sane(P.morph_close);
+
     cv::Mat kOpen, kClose;
-    if (P.morph_open > 0)
-        kOpen = cv::getStructuringElement(cv::MORPH_ELLIPSE, {P.morph_open, P.morph_open});
-    if (P.morph_close > 0)
-        kClose = cv::getStructuringElement(cv::MORPH_ELLIPSE, {P.morph_close, P.morph_close});
+    if (kOpenSz > 0)
+        kOpen = cv::getStructuringElement(cv::MORPH_ELLIPSE, {kOpenSz, kOpenSz});
+    if (kCloseSz > 0)
+        kClose = cv::getStructuringElement(cv::MORPH_ELLIPSE, {kCloseSz, kCloseSz});
+
+    // Debug once
+    static bool printed = false;
+    if (!printed)
+    {
+        printed = true;
+        std::cout << "kOpen=" << (kOpen.empty() ? 0 : kOpen.rows)
+                  << " kClose=" << (kClose.empty() ? 0 : kClose.rows) << "\n";
+    }
 
     while (s.run.load(std::memory_order_relaxed))
     {
@@ -171,14 +191,17 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         if (!s.cap.read(frame))
             continue;
 
+        std::cout << "\nframe #" << nFrame << "\n";
+        nFrame++;
+
+        vlog.Write("raw", frame);
+
         if (s.have_maps)
             cv::remap(frame, und, s.map1, s.map2, cv::INTER_LINEAR);
         else
             und = frame;
 
-        if ((nFrame % 30) == 0)
-            std::cout << "frame #" << nFrame << "\n";
-        ++nFrame;
+        vlog.Write("und", und);
 
         cv::Mat view = und;
         if (s.roi.area() > 0)
@@ -187,22 +210,87 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             view = und(s.roi);
         }
 
+        vlog.Write("view", view);
+
+        /*
+        cv::Mat frameNorm;
+        cv::cvtColor(view, frameNorm, cv::COLOR_BGR2HSV);
+
+        std::vector<cv::Mat> hsvChannels;
+        cv::split(frameNorm, hsvChannels);
+
+        // Equalize only the V channel (brightness)
+        cv::equalizeHist(hsvChannels[2], hsvChannels[2]);
+
+        cv::merge(hsvChannels, frameNorm);
+        cv::cvtColor(frameNorm, view, cv::COLOR_HSV2BGR); // back to BGR
+
+        vlog.Write("view-n1", view);
+
+        cv::Mat normed;
+        view.convertTo(normed, CV_32F);
+        std::vector<cv::Mat> bgr;
+        cv::split(normed, bgr);
+        for (auto &ch : bgr)
+        {
+            double minv, maxv;
+            cv::minMaxLoc(ch, &minv, &maxv);
+            ch = (ch - minv) / std::max(1.0, (maxv - minv)) * 255.0;
+        }
+        cv::merge(bgr, normed);
+        normed.convertTo(view, CV_8U);
+
+        vlog.Write("view-n2", view);
+        */
+
         cv::cvtColor(view, hsv, cv::COLOR_BGR2HSV);
+
+        CV_Assert(hsv.type() == CV_8UC3);
+
+        // super-permissive to verify masks aren't broken
+        cv::Mat mask_satbright;
+        cv::inRange(hsv, cv::Scalar(0, 20, 30), cv::Scalar(179, 255, 255), mask_satbright);
+        std::cout << "nnz permissive=" << cv::countNonZero(mask_satbright) << "\n";
+        vlog.Write("mask_permissive", mask_satbright);
+
+        cv::Mat H, S, V;
+        {
+            std::vector<cv::Mat> ch(3);
+            cv::split(hsv, ch); // ch[0]=H, ch[1]=S, ch[2]=V
+            H = ch[0];
+            S = ch[1];
+            V = ch[2];
+        }
+
+        double hmin, hmax, smin, smax, vmin, vmax;
+        cv::minMaxLoc(H, &hmin, &hmax);
+        cv::minMaxLoc(S, &smin, &smax);
+        cv::minMaxLoc(V, &vmin, &vmax);
+
+        std::cout << "[HSV] H:[" << hmin << "," << hmax << "] "
+                  << "S:[" << smin << "," << smax << "] "
+                  << "V:[" << vmin << "," << vmax << "]\n";
+
         cv::inRange(hsv, cv::Scalar(P.H1a, P.SminA, P.VminA), cv::Scalar(P.H2a, 255, 255), maskA);
         cv::inRange(hsv, cv::Scalar(P.H1b, P.SminB, P.VminB), cv::Scalar(P.H2b, 255, 255), maskB);
         cv::bitwise_or(maskA, maskB, mask);
 
-        // (optional debug every 30th frame)
-        if (1) //(nFrame % 30) == 0)
+        if (mask.type() != CV_8UC1)
         {
-            std::cout << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
-            std::cout << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
-            std::cout << "maskA nnz=" << cv::countNonZero(maskA)
-                      << " maskB nnz=" << cv::countNonZero(maskB) << "\n";
+            if (mask.channels() == 1)
+                mask.convertTo(mask, CV_8U);
+            else
+                cv::cvtColor(mask, mask, cv::COLOR_BGR2GRAY); // belt & suspenders
         }
 
-        if (mask.type() != CV_8UC1)
-            mask.convertTo(mask, CV_8U);
+        vlog.Write("maskA", maskA);
+        vlog.Write("maskB", maskB);
+        vlog.Write("maskAB", mask);
+
+        std::cout << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
+        std::cout << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
+        std::cout << "maskA nnz=" << cv::countNonZero(maskA)
+                  << " maskB nnz=" << cv::countNonZero(maskB) << "\n";
 
         // Morphology (tmp + swap)
         cv::Mat tmp;
@@ -211,11 +299,16 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             cv::morphologyEx(mask, tmp, cv::MORPH_OPEN, kOpen, cv::Point(-1, -1), 1, cv::BORDER_CONSTANT, 0);
             std::swap(mask, tmp);
         }
+
+        vlog.Write("m_open", mask);
+
         if (!mask.empty() && !kClose.empty())
         {
             cv::morphologyEx(mask, tmp, cv::MORPH_CLOSE, kClose, cv::Point(-1, -1), 1, cv::BORDER_CONSTANT, 0);
             std::swap(mask, tmp);
         }
+
+        vlog.Write("m_close", mask);
 
         std::cout << "processing 0001\n";
 
@@ -321,5 +414,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         }
 
         s.latest.store(out, std::memory_order_release);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 }

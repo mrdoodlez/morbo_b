@@ -54,10 +54,12 @@ int Controller_LoadParams()
 
     // -------- HSV thresholds (red, two bands) --------
     g_vodomParams.H1a = 0;
-    g_vodomParams.H2a = 10;
-    g_vodomParams.SminA = 90;
-    g_vodomParams.VminA = 80;
-    g_vodomParams.H1b = 170;
+    g_vodomParams.H2a = 50;
+    g_vodomParams.SminA = 20;
+    g_vodomParams.VminA = 20;
+
+
+    g_vodomParams.H1b = 140;
     g_vodomParams.H2b = 180;
     g_vodomParams.SminB = 90;
     g_vodomParams.VminB = 80;

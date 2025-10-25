@@ -1,35 +1,69 @@
-# **Quadcopter Flight Stabilization Project**
-_Developing experience in IMU processing and closed-loop flight control_
+# Morbo-B
+### Autonomous Tag-Following Rover
 
-## **Project Overview**
-This is an **on-going project** focused on **gaining experience** in IMU sensor processing and designing a **closed-loop flight stabilization controller**. The goal is **not** to build a fully functional flight controller but to ensure that the quadcopter can maintain stable flight (hovering) without falling.
+---
 
-## **Key Features**
-âœ… **Real-time IMU data processing** with sensor fusion  
-âœ… **250 Hz closed-loop flight stability control**  
-âœ… **Two operation modes: Flight control & Calibration**  
-âœ… **3D visualization of telemetry data using a Python tool**  
+## Overview
 
-## **Hardware Components**
-- **MCU**: STM32G474 Nucleo  
-- **ESC**: Speedy-bee (PWM control protocol)  
-- **IMU Sensor**: ST LSM6D (Accelerometer + Gyroscope)  
-- **Communication**: UARTâ†”Bluetooth module (host communication)  
-- **Power Supply**: DC/DC module  
+**Morbo-B** is an experimental rover platform designed to follow a visual tag in real time.
+The system combines low-level motion control on **STM32 + FreeRTOS** with a host-side vision and navigation stack (currently running on PC, later migrating to **Raspberry Pi**).
 
-## **Software & Technology Stack**
-- **Firmware Language**: C  
-- **MCU Frameworks**: STM32 HAL, FreeRTOS  
-- **Sensor Fusion**: ST MotionGC, MotionAC, MotionFX  
-- **Control Loop Frequency**: 250 Hz  
-- **Communication Protocols**:  
-  - **MCUâ†”IMU** via 4-wire **SPI (2.5 Mbit/s)**  
-  - **MCUâ†”Host** via **UARTâ†”Bluetooth**  
+---
 
-## **Host Test Utility**
-- **Written in Python**  
-- **Visualizes telemetry in 3D**  
-- **Displays raw sensor data in calibration mode**  
+## System Architecture
 
-## **Next Steps (TODO)**
-- Implement **short trajectory following** for the quadrotor  
+### Onboard (STM32 + FreeRTOS)
+- PWM motor control for differential drive wheels
+- Wheel encoders for odometry
+- 6DoF IMU with **ST MotionFX** sensor fusion
+- Command interpreter capable of:
+  - Relative moves (`dx`, `dy`)
+  - Absolute positioning within the odom frame
+
+### Host Side (PC / Raspberry Pi)
+- **Python communication utility**
+  - Sends motion commands via Bluetooth or serial link
+  - Visualizes rover pose and trajectory in real time
+- **OpenCV-based vision module**
+  - Detects and tracks a red circular tag in the camera frame
+  - Estimates tag position and orientation relative to the rover
+
+---
+
+## Current Capabilities
+- Low-level motion control
+- IMU fusion and odometry
+- Tag detection via camera
+- Command and visualization tools
+
+---
+
+## Work in Progress
+- Integrate visual tracking output into motion commands
+  - Convert tag position in camera frame → rover movement in odom frame
+- Migrate host functionality to Raspberry Pi for onboard autonomy
+- Improve latency and robustness of video streaming and processing
+
+---
+
+## Technologies
+- **Embedded:** STM32, FreeRTOS, C/C++, ST MotionFX / MotionAC / MotionGC
+- **Host:** Python, OpenCV, Matplotlib
+- **Communication:** Bluetooth / Serial link
+
+---
+
+## Next Steps
+1. Implement closed-loop tag-following logic
+2. Optimize frame-to-command latency
+3. Migrate host logic to Raspberry Pi
+4. Add waypoint and trajectory tracking
+
+---
+
+## Demo
+*Coming soon — real-time video of the rover following a colored tag.*
+
+---
+
+**Morbo-B** — experimental platform for vision-guided mobile robotics.

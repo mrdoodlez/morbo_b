@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.10)
+project(vpos LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# -----------------------------
+# Find OpenCV
+# -----------------------------
+find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d)
+
+# -----------------------------
+# Source files
+# -----------------------------
+add_executable(vpos
+    src/main.cpp
+    src/comm.cpp
+    src/serial.cpp
+    src/controller.cpp
+    src/vodom.cpp
+    src/params.cpp
+    src/logger.cpp
+    ../shared/host_interface.c
+)
+
+# -----------------------------
+# Includes
+# -----------------------------
+target_include_directories(vpos PRIVATE
+    src
+    ../shared
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+# -----------------------------
+# Libraries
+# -----------------------------
+target_link_libraries(vpos
+    ${OpenCV_LIBS}
+    atomic
+)
+
+message(STATUS "OpenCV includes: ${OpenCV_INCLUDE_DIRS}")
+message(STATUS "OpenCV libs: ${OpenCV_LIBS}")

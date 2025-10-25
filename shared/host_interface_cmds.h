@@ -1,7 +1,7 @@
 #ifndef _HOST_INTERFACE_STRUCTS_H_
 #define _HOST_INTERFACE_STRUCTS_H_
 
-#include "main.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C"

@@ -1,13 +1,16 @@
-#ifndef _SERIAL_H_
-#define _SERIAL_H_
+#pragma once
 
-#include "../platform/main.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#define HIP_SERIAL 0
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-void Serial_Init(int dev);
+int Serial_Init(const char* const dev);
 
 size_t Serial_Read(int dev, uint8_t* buff, size_t count);
 
@@ -16,5 +19,3 @@ size_t Serial_Write(int dev, const uint8_t* buff, size_t count);
 #ifdef __cplusplus
 }
 #endif
-
-#endif // _SERIAL_H_

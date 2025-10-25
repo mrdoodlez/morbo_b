@@ -5,6 +5,7 @@
 #include "queue.h"
 #include "host_interface.h"
 #include "host_interface_cmds.h"
+#include "host_interface_task.h"
 #include "imu_reader.h"
 #include "engine_control.h"
 #include "scenarios.h"

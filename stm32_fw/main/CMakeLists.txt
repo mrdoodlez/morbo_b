@@ -68,7 +68,8 @@ set (PROJECT_SOURCES
 	Sources/drivers/pca9685.c
 	Sources/app/controller.c
 	# Sources/app/monitor.c
-	Sources/app/host_interface.c
+	../../shared/host_interface.c
+	Sources/app/host_interface_task.c
 	Sources/app/imu_reader.c
 	Sources/app/mhelpers.c
 	Sources/app/engine_control.c
@@ -118,6 +119,7 @@ set (PROJECT_INCLUDES
 	${CUBE_DIR}/Drivers/CMSIS/Device/ST/STM32G4xx/Include
 	${CUBE_DIR}/Drivers/CMSIS/Include
 	${CUBE_DIR}/Drivers/BSP/STM32G4xx_Nucleo
+	../../shared
 	Sources
 	Sources/platform
 	Sources/drivers

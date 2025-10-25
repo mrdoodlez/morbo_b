@@ -180,11 +180,12 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
     if (!printed)
     {
         printed = true;
-        std::cout << "kOpen=" << (kOpen.empty() ? 0 : kOpen.rows)
+        vlog.text << "kOpen=" << (kOpen.empty() ? 0 : kOpen.rows)
                   << " kClose=" << (kClose.empty() ? 0 : kClose.rows) << "\n";
     }
 
-    while (s.run.load(std::memory_order_relaxed))
+    extern std::atomic<bool> g_stop;
+    while (s.run.load(std::memory_order_relaxed) && !g_stop)
     {
         cv::Mat frame, und, hsv, mask, edges;
 
@@ -193,7 +194,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         if (!s.cap.read(frame))
             continue;
 
-        std::cout << "\nframe #" << nFrame << "\n";
+        vlog.text << "\nframe #" << nFrame << "\n";
         nFrame++;
 
         vlog.Write("raw", frame);
@@ -225,10 +226,10 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
         double hmin, hmax;
         cv::minMaxLoc(ch[0], &hmin, &hmax);
-        std::cout << "H range = [" << hmin << "," << hmax << "]" << std::endl;
+        vlog.text << "H range = [" << hmin << "," << hmax << "]" << std::endl;
 
         cv::Vec3b pix = hsv.at<cv::Vec3b>(hsv.rows / 2, hsv.cols / 2);
-        std::cout << "center pixel HSV="
+        vlog.text << "center pixel HSV="
                   << (int)pix[0] << "," << (int)pix[1] << "," << (int)pix[2] << std::endl;
 
         // Parameters
@@ -249,16 +250,16 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         cv::normalize(vHist, vHist, 1.0, 0.0, cv::NORM_L1);
 
         // Print results
-        std::cout << "H: ";
+        vlog.text << "H: ";
         for (int i = 0; i < bins; ++i)
-            std::cout << "h[" << i << "]=" << hHist.at<float>(i) << " ";
-        std::cout << "\nS: ";
+            vlog.text << "h[" << i << "]=" << hHist.at<float>(i) << " ";
+        vlog.text << "\nS: ";
         for (int i = 0; i < bins; ++i)
-            std::cout << "s[" << i << "]=" << sHist.at<float>(i) << " ";
-        std::cout << "\nV: ";
+            vlog.text << "s[" << i << "]=" << sHist.at<float>(i) << " ";
+        vlog.text << "\nV: ";
         for (int i = 0; i < bins; ++i)
-            std::cout << "v[" << i << "]=" << vHist.at<float>(i) << " ";
-        std::cout << "\n";
+            vlog.text << "v[" << i << "]=" << vHist.at<float>(i) << " ";
+        vlog.text << "\n";
 
         cv::inRange(hsv, cv::Scalar(P.Hmin, P.Smin, P.Vmin), cv::Scalar(179, 255, 255), mask);
 
@@ -272,9 +273,9 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
         vlog.Write("mask", mask);
 
-        std::cout << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
-        std::cout << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
-        std::cout << "mask nnz=" << cv::countNonZero(mask) << "\n";
+        vlog.text << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
+        vlog.text << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
+        vlog.text << "mask nnz=" << cv::countNonZero(mask) << "\n";
 
         // Morphology (tmp + swap)
         cv::Mat tmp;
@@ -341,7 +342,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             float score = dpx / (1.0f + (axisRatio - 1.0f) * 5.0f);
             cands.push_back({ell.center, dpx, fill, axisRatio, score, ell});
 
-            std::cout << "ellipse found: " << a << " " << b << " " << score << std::endl;
+            vlog.text << "ellipse found: " << a << " " << b << " " << score << std::endl;
         }
 
         VodomResult out{};
@@ -360,14 +361,14 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             float v = best.c.y + (s.roi.area() ? s.roi.y : 0);
             float dpx = best.dpx;
 
-            std::cout << "best candidate at: " << u << " " << v << std::endl;
+            vlog.text << "best candidate at: " << u << " " << v << std::endl;
 
             // Camera 3D (assume fronto-parallel disk): Z = f * D / dpx
             float Z = (P.fx * P.disc_D_m) / std::max(dpx, 1.0f);
             float X = (u - P.cx) * Z / P.fx;
             float Y = (v - P.cy) * Z / P.fy;
 
-            std::cout << "cam frame: " << Z << " " << X << " " << Y << std::endl;
+            vlog.text << "cam frame: " << Z << " " << X << " " << Y << std::endl;
 
             cv::Mat pc = (cv::Mat_<double>(3, 1) << X, Y, Z);
             cv::Mat pb = P.Rbc * pc + P.tbc;
@@ -379,7 +380,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             out.bearing_rad = std::atan2(out.dy_m, out.dx_m);
             out.d_px = dpx;
 
-            std::cout << "dx: " << dx << "dy " << dy << std::endl;
+            vlog.text << "dx: " << dx << "dy " << dy << std::endl;
 
             // simple quality: normalized fill clamped, scaled by diameter
             out.quality = std::min(1.f, std::max(0.f, best.fill)) * std::min(1.f, dpx / 80.f);
@@ -394,7 +395,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
                 cv::Rect newROI(int(u - R / 2), int(v - R / 2), R, R);
                 s.roi = newROI & cv::Rect(0, 0, und.cols, und.rows);
 
-                std::cout << "ellipse locked!" << std::endl;
+                vlog.text << "ellipse locked!" << std::endl;
             }
             s.lostFrames = 0;
         }
@@ -404,11 +405,11 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             if (++s.lostFrames >= P.forget_miss)
                 s.roi = cv::Rect(); // reset to full frame
 
-            std::cout << "loss of lock!" << std::endl;
+            vlog.text << "loss of lock!" << std::endl;
         }
 
         s.latest.store(out, std::memory_order_release);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }

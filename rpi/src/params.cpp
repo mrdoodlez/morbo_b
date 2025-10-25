@@ -25,13 +25,13 @@ int Controller_LoadParams()
     g_vodomParams = VodomParams{};
 
     // -------- Image / IO --------
-    g_vodomParams.W = 640;
-    g_vodomParams.H = 480;
+    g_vodomParams.W = 800;
+    g_vodomParams.H = 600;
     g_vodomParams.FPS = 30;
 
     // -------- Target geometry --------
     // Diameter of your signal disk (adjust if different)
-    g_vodomParams.disc_D_m = 0.08f; // 80 mm
+    g_vodomParams.disc_D_m = 0.105f; // 105 mm
 
     // -------- Intrinsics (from your C920 calibration @ 640x480) --------
     // K (3x3, CV_64F)
@@ -48,25 +48,20 @@ int Controller_LoadParams()
     g_vodomParams.cy = g_vodomParams.K.at<double>(1, 2);
 
     // -------- Extrinsics base<-camera (defaults: camera at origin, facing forward) --------
-    // Rbc = I, tbc = 0 — replace later with your measured/optimized values
-    g_vodomParams.Rbc = cv::Mat::eye(3, 3, CV_64F);
+    g_vodomParams.Rbc = (cv::Mat_<double>(3, 3) << 0, 0, 1,
+                         -1, 0, 0,
+                         0, -1, 0);
     g_vodomParams.tbc = cv::Mat::zeros(3, 1, CV_64F);
 
-    // -------- HSV thresholds (red, two bands) --------
-    g_vodomParams.H1a = 0;
-    g_vodomParams.H2a = 50;
-    g_vodomParams.SminA = 20;
-    g_vodomParams.VminA = 20;
+    // -------- HSV thresholds (red) --------
 
-
-    g_vodomParams.H1b = 140;
-    g_vodomParams.H2b = 180;
-    g_vodomParams.SminB = 90;
-    g_vodomParams.VminB = 80;
+    g_vodomParams.Hmin = 165;
+    g_vodomParams.Smin = 150;
+    g_vodomParams.Vmin = 50;
 
     // -------- Morphology --------
-    g_vodomParams.morph_open = 3;
-    g_vodomParams.morph_close = 5;
+    g_vodomParams.morph_open = 10;
+    g_vodomParams.morph_close = 15;
 
     // -------- Detection thresholds --------
     g_vodomParams.dpx_min = 12;

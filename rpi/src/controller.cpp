@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "params.h"
 #include "comm.h"
 #include "vodom.h"
 #include "host_interface_cmds.h"
@@ -32,6 +33,8 @@ enum  FlightScenario_t
 
 int Controller_Start(const ControllerParams& params)
 {
+    Controller_LoadParams();
+
     Comm_Start();
 
     /*

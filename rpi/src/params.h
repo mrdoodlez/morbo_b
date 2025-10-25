@@ -15,6 +15,9 @@ struct ParamsView
     uint32_t version; // increments on each update of this page
 };
 
+
+int Controller_LoadParams();
+
 int Controller_GetParams(ParamPage page, ParamsView *out_view);
 
 /*******************************************************************************/
@@ -38,10 +41,9 @@ struct VodomParams
     cv::Mat tbc; // 3x1, CV_64F
 
     // HSV thresholds (red is split into two bands)
-    // Red HSV (two bands, 0..180 hue)
-    // band A ~ [0..10], band B ~ [170..180]
-    int H1a = 0, H2a = 10, SminA = 90, VminA = 80;
-    int H1b = 170, H2b = 180, SminB = 90, VminB = 80;
+    // Red HSV (0..180 hue)
+
+    int Hmin = 165, Smin = 90, Vmin = 80;
 
     // Morphology
     int morph_open = 3;

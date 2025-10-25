@@ -51,6 +51,7 @@ struct VodomInternals
 };
 
 static VodomInternals g_vOdomInternals;
+static VodomParams g_params;
 
 static void _Vodom_Worker(VodomInternals &s, const VodomParams &P);
 
@@ -124,9 +125,9 @@ int Vodom_Start(const std::string &videoDev)
     }
 
     auto *vp = static_cast<const VodomParams *>(v.ptr);
-    VodomParams params = *vp;
+    g_params = *vp;
 
-    if (!Vodom_OpenCamera(g_vOdomInternals.cap, videoDev, params))
+    if (!Vodom_OpenCamera(g_vOdomInternals.cap, videoDev, g_params))
     {
         std::cout << "Failed to open camera: " << videoDev << "\n";
         g_vOdomInternals.run.store(false, std::memory_order_relaxed);
@@ -134,7 +135,7 @@ int Vodom_Start(const std::string &videoDev)
     }
 
     // Prepare undistort
-    Vodom_PrepareUndistortMaps(g_vOdomInternals, params);
+    Vodom_PrepareUndistortMaps(g_vOdomInternals, g_params);
 
     // Publish an initial empty result
     VodomResult init{};
@@ -143,7 +144,7 @@ int Vodom_Start(const std::string &videoDev)
     g_vOdomInternals.latest.store(init, std::memory_order_release);
 
     std::thread([&]
-                { _Vodom_Worker(g_vOdomInternals, params); })
+                { _Vodom_Worker(g_vOdomInternals, g_params); })
         .detach();
 
     return 0;
@@ -153,7 +154,6 @@ int Vodom_Start(const std::string &videoDev)
 
 static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 {
-    cv::Mat frame, und, hsv, maskA, maskB, mask, edges;
     int consecutiveHits = 0;
 
     uint32_t nFrame = 0;
@@ -186,6 +186,8 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
     while (s.run.load(std::memory_order_relaxed))
     {
+        cv::Mat frame, und, hsv, mask, edges;
+
         uint64_t t_us = nowMonotonicUS();
 
         if (!s.cap.read(frame))
@@ -212,68 +214,53 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
         vlog.Write("view", view);
 
-        /*
-        cv::Mat frameNorm;
-        cv::cvtColor(view, frameNorm, cv::COLOR_BGR2HSV);
-
-        std::vector<cv::Mat> hsvChannels;
-        cv::split(frameNorm, hsvChannels);
-
-        // Equalize only the V channel (brightness)
-        cv::equalizeHist(hsvChannels[2], hsvChannels[2]);
-
-        cv::merge(hsvChannels, frameNorm);
-        cv::cvtColor(frameNorm, view, cv::COLOR_HSV2BGR); // back to BGR
-
-        vlog.Write("view-n1", view);
-
-        cv::Mat normed;
-        view.convertTo(normed, CV_32F);
-        std::vector<cv::Mat> bgr;
-        cv::split(normed, bgr);
-        for (auto &ch : bgr)
-        {
-            double minv, maxv;
-            cv::minMaxLoc(ch, &minv, &maxv);
-            ch = (ch - minv) / std::max(1.0, (maxv - minv)) * 255.0;
-        }
-        cv::merge(bgr, normed);
-        normed.convertTo(view, CV_8U);
-
-        vlog.Write("view-n2", view);
-        */
-
         cv::cvtColor(view, hsv, cv::COLOR_BGR2HSV);
 
         CV_Assert(hsv.type() == CV_8UC3);
 
-        // super-permissive to verify masks aren't broken
-        cv::Mat mask_satbright;
-        cv::inRange(hsv, cv::Scalar(0, 20, 30), cv::Scalar(179, 255, 255), mask_satbright);
-        std::cout << "nnz permissive=" << cv::countNonZero(mask_satbright) << "\n";
-        vlog.Write("mask_permissive", mask_satbright);
+        // Split channels
+        std::vector<cv::Mat> ch;
+        cv::split(hsv, ch);
+        cv::Mat H = ch[0], S = ch[1], V = ch[2];
 
-        cv::Mat H, S, V;
-        {
-            std::vector<cv::Mat> ch(3);
-            cv::split(hsv, ch); // ch[0]=H, ch[1]=S, ch[2]=V
-            H = ch[0];
-            S = ch[1];
-            V = ch[2];
-        }
+        double hmin, hmax;
+        cv::minMaxLoc(ch[0], &hmin, &hmax);
+        std::cout << "H range = [" << hmin << "," << hmax << "]" << std::endl;
 
-        double hmin, hmax, smin, smax, vmin, vmax;
-        cv::minMaxLoc(H, &hmin, &hmax);
-        cv::minMaxLoc(S, &smin, &smax);
-        cv::minMaxLoc(V, &vmin, &vmax);
+        cv::Vec3b pix = hsv.at<cv::Vec3b>(hsv.rows / 2, hsv.cols / 2);
+        std::cout << "center pixel HSV="
+                  << (int)pix[0] << "," << (int)pix[1] << "," << (int)pix[2] << std::endl;
 
-        std::cout << "[HSV] H:[" << hmin << "," << hmax << "] "
-                  << "S:[" << smin << "," << smax << "] "
-                  << "V:[" << vmin << "," << vmax << "]\n";
+        // Parameters
+        const int bins = 12;
+        const float h_range[] = {0.f, 180.f};
+        const float sv_range[] = {0.f, 256.f};
+        const float *rangesH[] = {h_range};
+        const float *rangesSV[] = {sv_range};
 
-        cv::inRange(hsv, cv::Scalar(P.H1a, P.SminA, P.VminA), cv::Scalar(P.H2a, 255, 255), maskA);
-        cv::inRange(hsv, cv::Scalar(P.H1b, P.SminB, P.VminB), cv::Scalar(P.H2b, 255, 255), maskB);
-        cv::bitwise_or(maskA, maskB, mask);
+        // Compute histograms (CV_32F)
+        cv::Mat hHist, sHist, vHist;
+        cv::calcHist(&H, 1, 0, cv::Mat(), hHist, 1, &bins, rangesH, true, false);
+        cv::calcHist(&S, 1, 0, cv::Mat(), sHist, 1, &bins, rangesSV, true, false);
+        cv::calcHist(&V, 1, 0, cv::Mat(), vHist, 1, &bins, rangesSV, true, false);
+
+        cv::normalize(hHist, hHist, 1.0, 0.0, cv::NORM_L1);
+        cv::normalize(sHist, sHist, 1.0, 0.0, cv::NORM_L1);
+        cv::normalize(vHist, vHist, 1.0, 0.0, cv::NORM_L1);
+
+        // Print results
+        std::cout << "H: ";
+        for (int i = 0; i < bins; ++i)
+            std::cout << "h[" << i << "]=" << hHist.at<float>(i) << " ";
+        std::cout << "\nS: ";
+        for (int i = 0; i < bins; ++i)
+            std::cout << "s[" << i << "]=" << sHist.at<float>(i) << " ";
+        std::cout << "\nV: ";
+        for (int i = 0; i < bins; ++i)
+            std::cout << "v[" << i << "]=" << vHist.at<float>(i) << " ";
+        std::cout << "\n";
+
+        cv::inRange(hsv, cv::Scalar(P.Hmin, P.Smin, P.Vmin), cv::Scalar(179, 255, 255), mask);
 
         if (mask.type() != CV_8UC1)
         {
@@ -283,14 +270,11 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
                 cv::cvtColor(mask, mask, cv::COLOR_BGR2GRAY); // belt & suspenders
         }
 
-        vlog.Write("maskA", maskA);
-        vlog.Write("maskB", maskB);
-        vlog.Write("maskAB", mask);
+        vlog.Write("mask", mask);
 
         std::cout << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
         std::cout << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
-        std::cout << "maskA nnz=" << cv::countNonZero(maskA)
-                  << " maskB nnz=" << cv::countNonZero(maskB) << "\n";
+        std::cout << "mask nnz=" << cv::countNonZero(mask) << "\n";
 
         // Morphology (tmp + swap)
         cv::Mat tmp;
@@ -310,8 +294,6 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
         vlog.Write("m_close", mask);
 
-        std::cout << "processing 0001\n";
-
         // Contours → candidate circles
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -327,17 +309,17 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         };
         std::vector<Cand> cands;
 
-        std::cout << "processing 0002\n";
-
         for (auto &c : contours)
         {
             if (c.size() < 5)
                 continue; // fitEllipse needs 5
+
             auto ell = cv::fitEllipse(c);
             float a = std::max(ell.size.width, ell.size.height) * 0.5f; // major
             float b = std::min(ell.size.width, ell.size.height) * 0.5f; // minor
             if (b <= 0)
                 continue;
+
             float axisRatio = a / b;
             float dpx = 2.0f * 0.5f * (a + b); // mean diameter
             if (dpx < P.dpx_min || dpx > P.dpx_max)
@@ -348,6 +330,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             // color fill ratio inside ellipse mask
             cv::Mat ellMask(view.rows, view.cols, CV_8U, cv::Scalar(0));
             cv::ellipse(ellMask, ell, cv::Scalar(255), cv::FILLED);
+
             cv::Mat overlap;
             cv::bitwise_and(mask, ellMask, overlap);
             float fill = (float)cv::countNonZero(overlap) / (float)cv::countNonZero(ellMask);
@@ -357,13 +340,13 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             // score: prefer bigger & more circular
             float score = dpx / (1.0f + (axisRatio - 1.0f) * 5.0f);
             cands.push_back({ell.center, dpx, fill, axisRatio, score, ell});
+
+            std::cout << "ellipse found: " << a << " " << b << " " << score << std::endl;
         }
 
         VodomResult out{};
         out.t_us = t_us;
         out.status = VODOM_NOT_DETECTED;
-
-        std::cout << "processing 0003\n";
 
         if (!cands.empty())
         {
@@ -377,10 +360,14 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             float v = best.c.y + (s.roi.area() ? s.roi.y : 0);
             float dpx = best.dpx;
 
+            std::cout << "best candidate at: " << u << " " << v << std::endl;
+
             // Camera 3D (assume fronto-parallel disk): Z = f * D / dpx
             float Z = (P.fx * P.disc_D_m) / std::max(dpx, 1.0f);
             float X = (u - P.cx) * Z / P.fx;
             float Y = (v - P.cy) * Z / P.fy;
+
+            std::cout << "cam frame: " << Z << " " << X << " " << Y << std::endl;
 
             cv::Mat pc = (cv::Mat_<double>(3, 1) << X, Y, Z);
             cv::Mat pb = P.Rbc * pc + P.tbc;
@@ -391,6 +378,9 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             out.range_m = std::hypot(out.dx_m, out.dy_m);
             out.bearing_rad = std::atan2(out.dy_m, out.dx_m);
             out.d_px = dpx;
+
+            std::cout << "dx: " << dx << "dy " << dy << std::endl;
+
             // simple quality: normalized fill clamped, scaled by diameter
             out.quality = std::min(1.f, std::max(0.f, best.fill)) * std::min(1.f, dpx / 80.f);
             out.status = VODOM_DETECTED_RED;
@@ -403,6 +393,8 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
                 int R = int(best.dpx * P.roi_expand);
                 cv::Rect newROI(int(u - R / 2), int(v - R / 2), R, R);
                 s.roi = newROI & cv::Rect(0, 0, und.cols, und.rows);
+
+                std::cout << "ellipse locked!" << std::endl;
             }
             s.lostFrames = 0;
         }
@@ -411,10 +403,12 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             consecutiveHits = 0;
             if (++s.lostFrames >= P.forget_miss)
                 s.roi = cv::Rect(); // reset to full frame
+
+            std::cout << "loss of lock!" << std::endl;
         }
 
         s.latest.store(out, std::memory_order_release);
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 }

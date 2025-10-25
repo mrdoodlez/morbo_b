@@ -47,7 +47,7 @@ The system combines low-level motion control on **STM32 + FreeRTOS** with a host
 ---
 
 ## Technologies
-- **Embedded:** STM32, FreeRTOS, C/C++, ST MotionFX / MotionAC / MotionGC
+- **Embedded:** STM32, FreeRTOS, C/C++, ST MotionFX
 - **Host:** Python, OpenCV, Matplotlib
 - **Communication:** Bluetooth / Serial link
 
@@ -55,9 +55,8 @@ The system combines low-level motion control on **STM32 + FreeRTOS** with a host
 
 ## Next Steps
 1. Implement closed-loop tag-following logic
-2. Optimize frame-to-command latency
-3. Migrate host logic to Raspberry Pi
-4. Add waypoint and trajectory tracking
+2. Migrate host logic to Raspberry Pi
+3. Add waypoint and trajectory tracking
 
 ---
 

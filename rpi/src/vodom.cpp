@@ -1,6 +1,7 @@
 #include "vodom.h"
 #include "params.h"
 #include "logger.h"
+#include "controller.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -10,30 +11,8 @@
 #include <thread>
 #include <iostream>
 
-typedef enum
-{
-    VODOM_NOT_DETECTED = 0,
-    VODOM_DETECTED_RED = 1,
-    VODOM_DETECTED_GREEN = 2 // future use
-} VodomStatus;
-
-typedef struct
-{
-    uint64_t t_us; // capture timestamp (monotonic/us)
-    VodomStatus status;
-    float dx_m; // in base_link
-    float dy_m;
-    float range_m;     // sqrt(dx^2+dy^2)
-    float bearing_rad; // atan2(dy,dx)
-    float d_px;        // measured diameter in pixels
-    float quality;     // 0..1 (or reprojection-err-like)
-} VodomResult;
-
 struct VodomInternals
 {
-    // lifecycle
-    std::atomic<bool> run{true};
-
     // camera
     cv::VideoCapture cap;
 
@@ -45,9 +24,6 @@ struct VodomInternals
     cv::Rect roi; // empty => full frame
     int lostFrames = 0;
     int consecutiveHits = 0;
-
-    // last result (published atomically)
-    std::atomic<VodomResult> latest;
 };
 
 static VodomInternals g_vOdomInternals;
@@ -120,7 +96,7 @@ int Vodom_Start(const std::string &videoDev)
     ParamsView v{};
     if (Controller_GetParams(ParamPage_Vodom, &v) != 0 || v.size != sizeof(VodomParams))
     {
-        std::cout << "Failed to load visual odometry parameters" << std::endl;
+        vlog.text << "Failed to load visual odometry parameters" << std::endl;
         return -10;
     }
 
@@ -129,19 +105,12 @@ int Vodom_Start(const std::string &videoDev)
 
     if (!Vodom_OpenCamera(g_vOdomInternals.cap, videoDev, g_params))
     {
-        std::cout << "Failed to open camera: " << videoDev << "\n";
-        g_vOdomInternals.run.store(false, std::memory_order_relaxed);
+        vlog.text << "Failed to open camera: " << videoDev << std::endl;
         return -20;
     }
 
     // Prepare undistort
     Vodom_PrepareUndistortMaps(g_vOdomInternals, g_params);
-
-    // Publish an initial empty result
-    VodomResult init{};
-    init.status = VODOM_NOT_DETECTED;
-    init.t_us = 0;
-    g_vOdomInternals.latest.store(init, std::memory_order_release);
 
     std::thread([&]
                 { _Vodom_Worker(g_vOdomInternals, g_params); })
@@ -181,11 +150,11 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
     {
         printed = true;
         vlog.text << "kOpen=" << (kOpen.empty() ? 0 : kOpen.rows)
-                  << " kClose=" << (kClose.empty() ? 0 : kClose.rows) << "\n";
+                  << " kClose=" << (kClose.empty() ? 0 : kClose.rows) << std::endl;
     }
 
     extern std::atomic<bool> g_stop;
-    while (s.run.load(std::memory_order_relaxed) && !g_stop)
+    while (!g_stop.load(std::memory_order_relaxed))
     {
         cv::Mat frame, und, hsv, mask, edges;
 
@@ -194,7 +163,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         if (!s.cap.read(frame))
             continue;
 
-        vlog.text << "\nframe #" << nFrame << "\n";
+        vlog.text << "frame #" << nFrame << std::endl;
         nFrame++;
 
         vlog.Write("raw", frame);
@@ -224,14 +193,6 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         cv::split(hsv, ch);
         cv::Mat H = ch[0], S = ch[1], V = ch[2];
 
-        double hmin, hmax;
-        cv::minMaxLoc(ch[0], &hmin, &hmax);
-        vlog.text << "H range = [" << hmin << "," << hmax << "]" << std::endl;
-
-        cv::Vec3b pix = hsv.at<cv::Vec3b>(hsv.rows / 2, hsv.cols / 2);
-        vlog.text << "center pixel HSV="
-                  << (int)pix[0] << "," << (int)pix[1] << "," << (int)pix[2] << std::endl;
-
         // Parameters
         const int bins = 12;
         const float h_range[] = {0.f, 180.f};
@@ -240,6 +201,7 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         const float *rangesSV[] = {sv_range};
 
         // Compute histograms (CV_32F)
+        /*
         cv::Mat hHist, sHist, vHist;
         cv::calcHist(&H, 1, 0, cv::Mat(), hHist, 1, &bins, rangesH, true, false);
         cv::calcHist(&S, 1, 0, cv::Mat(), sHist, 1, &bins, rangesSV, true, false);
@@ -259,7 +221,8 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         vlog.text << "\nV: ";
         for (int i = 0; i < bins; ++i)
             vlog.text << "v[" << i << "]=" << vHist.at<float>(i) << " ";
-        vlog.text << "\n";
+        vlog.text << std::endl;
+        */
 
         cv::inRange(hsv, cv::Scalar(P.Hmin, P.Smin, P.Vmin), cv::Scalar(179, 255, 255), mask);
 
@@ -273,9 +236,9 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
         vlog.Write("mask", mask);
 
-        vlog.text << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << "\n";
-        vlog.text << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << "\n";
-        vlog.text << "mask nnz=" << cv::countNonZero(mask) << "\n";
+        vlog.text << "roi=" << s.roi << " view=" << view.cols << "x" << view.rows << std::endl;
+        vlog.text << "hsv=" << hsv.cols << "x" << hsv.rows << " type=" << hsv.type() << std::endl;
+        vlog.text << "mask nnz=" << cv::countNonZero(mask) << std::endl;
 
         // Morphology (tmp + swap)
         cv::Mat tmp;
@@ -345,10 +308,6 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             vlog.text << "ellipse found: " << a << " " << b << " " << score << std::endl;
         }
 
-        VodomResult out{};
-        out.t_us = t_us;
-        out.status = VODOM_NOT_DETECTED;
-
         if (!cands.empty())
         {
             // pick best
@@ -373,6 +332,9 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
             cv::Mat pc = (cv::Mat_<double>(3, 1) << X, Y, Z);
             cv::Mat pb = P.Rbc * pc + P.tbc;
 
+            VodomMsg out{};
+            out.t_us = t_us;
+
             double dx = pb.at<double>(0), dy = pb.at<double>(1);
             out.dx_m = (float)dx;
             out.dy_m = (float)dy;
@@ -384,7 +346,14 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
             // simple quality: normalized fill clamped, scaled by diameter
             out.quality = std::min(1.f, std::max(0.f, best.fill)) * std::min(1.f, dpx / 80.f);
-            out.status = VODOM_DETECTED_RED;
+            out.status = VodomMsg::VodomStatus::VODOM_DETECTED_RED;
+
+            ControllerMsg msg{};
+            msg.ts_ms = out.t_us / 1000ULL; // convert to ms for the controller clock
+            msg.type = ControllerMsg::Type::TYPE_VODOM;
+            msg.payload.vodom = out; // POD copy
+
+            Controller_PostMessage(msg);
 
             // Temporal confirmation + ROI tracking
             consecutiveHits++;
@@ -407,8 +376,6 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
             vlog.text << "loss of lock!" << std::endl;
         }
-
-        s.latest.store(out, std::memory_order_release);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }

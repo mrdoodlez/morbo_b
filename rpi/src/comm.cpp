@@ -1,11 +1,13 @@
 #include <thread>
 #include "host_interface_cmds.h"
 #include "host_interface.h"
+#include "controller.h"
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <iostream>
 #include <map>
+#include "logger.h"
 
 static void _Pinger();
 static void _Pinger_Start();
@@ -55,14 +57,25 @@ void Controller_NewCommand(const HIP_Cmd_t* cmd)
 {
     HIP_CmdHandler handler = nullptr;
 
-    //std::cout << __func__ << ' ' << cmd->header.cmd << '\n';
+    // vlog.text << __func__ << ' ' << cmd->header.cmd << std::endl;
 
     auto it = g_handlTable.find(cmd->header.cmd);
     if (it != g_handlTable.end())
         handler = it->second;
 
     if (handler)
+    {
         handler(cmd);
+    }
+    else
+    {
+        ControllerMsg rovMsg;
+        rovMsg.ts_ms = Controller_NowMs();
+        rovMsg.type = ControllerMsg::Type::TYPE_ROVER;
+        rovMsg.payload.rovData = *cmd;
+
+        Controller_PostMessage(rovMsg);
+    }
 }
 
 /*******************************************************************************/
@@ -149,20 +162,21 @@ static int _WaitForPong(uint16_t seq, std::chrono::milliseconds timeout)
 static void _Pinger()
 {
     uint16_t txSeq = 0;
+    int noPongCnt = 0;
     for (;;)
     {
-        std::cout << "ping seq: " << txSeq << '\n';
-
         HostIface_PutData(HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
         HostIface_Send();
 
-        if (_WaitForPong(txSeq, std::chrono::milliseconds(200)) != 0)
+        if (_WaitForPong(txSeq, std::chrono::milliseconds(200)) == 0)
         {
-            // TODO: handle error
+            noPongCnt = 0;
         }
-        else
+        else if (++noPongCnt > 5)
         {
-            std::cout << "pong\n";
+            vlog.text << "no connect with rover. exit." << std::endl;
+            extern std::atomic<bool> g_stop;
+            g_stop.store(true, std::memory_order_relaxed);
         }
 
         txSeq++;

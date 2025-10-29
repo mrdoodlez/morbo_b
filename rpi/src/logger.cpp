@@ -40,11 +40,19 @@ void TextLogger::ensure_open_()
 std::string TextLogger::now_ts_()
 {
     using clock = std::chrono::system_clock;
-    auto t = clock::to_time_t(clock::now());
+    auto now = clock::now();
+    auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - now_s).count();
+
+    std::time_t t = clock::to_time_t(now);
     std::tm tm{};
     localtime_r(&t, &tm);
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+
+    // seconds since midnight
+    int sec_of_day = tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec;
+
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%05d.%03lld", sec_of_day, static_cast<long long>(ms));
     return std::string(buf);
 }
 
@@ -119,7 +127,7 @@ void Logger::Write(const std::string &streamName, const cv::Mat &frame)
     {
         if (!init_stream_(s, frame))
         {
-            std::cerr << "[Logger] stream init failed: " << streamName << "\n";
+            std::cerr << "[Logger] stream init failed: " << streamName << std::endl;
             return;
         }
     }
@@ -241,7 +249,7 @@ Logger::popen_write_binary_(const std::string &cmd)
     if (!f)
     {
         std::cerr << "[Logger] popen failed (errno=" << errno
-                  << " \"" << std::strerror(errno) << "\")\n  cmd: " << cmd << "\n";
+                  << " \"" << std::strerror(errno) << "\")\n  cmd: " << cmd << std::endl;
         return {nullptr, PCLOSE};
     }
     return std::unique_ptr<FILE, int (*)(FILE *)>(f, PCLOSE);
@@ -281,7 +289,7 @@ bool Logger::init_stream_(VideoStream &s, const cv::Mat &first)
         auto pipe = popen_write_binary_(cmd);
         if (!pipe)
         {
-            std::cerr << "[Logger] FFmpeg popen failed: " << cmd << "\n";
+            std::cerr << "[Logger] FFmpeg popen failed: " << cmd << std::endl;
             return false;
         }
         s.ff = std::make_unique<FfmpegPipe>();
@@ -291,7 +299,7 @@ bool Logger::init_stream_(VideoStream &s, const cv::Mat &first)
         s.ff->fps = s.opts.fps;
         s.ff->cmd = cmd;
         s.initialized = true;
-        std::cout << "[Logger] FFmpeg stream ready: " << cmd << "\n";
+        vlog.text << "[Logger] FFmpeg stream ready: " << cmd << std::endl;
         return true;
     }
     else
@@ -302,12 +310,12 @@ bool Logger::init_stream_(VideoStream &s, const cv::Mat &first)
         s.cvw->fps = s.opts.fps;
         if (!s.cvw->vw.open(s.opts.cv_file_path, s.opts.fourcc, s.opts.fps, cv::Size(w, h), true))
         {
-            std::cerr << "[Logger] OpenCV VideoWriter open failed: " << s.opts.cv_file_path << "\n";
+            std::cerr << "[Logger] OpenCV VideoWriter open failed: " << s.opts.cv_file_path << std::endl;
             s.cvw.reset();
             return false;
         }
         s.initialized = true;
-        std::cout << "[Logger] OpenCV video writer ready: " << s.opts.cv_file_path << "\n";
+        vlog.text << "[Logger] OpenCV video writer ready: " << s.opts.cv_file_path << std::endl;
         return true;
     }
 }
@@ -325,7 +333,7 @@ void Logger::write_frame_ffmpeg_(VideoStream &s, const cv::Mat &frame)
 
     if (std::fwrite(bgr.data, 1, bytes, s.ff->pipe.get()) != bytes)
     {
-        std::cerr << "[Logger] ffmpeg fwrite failed (errno: " << std::strerror(errno) << "). cmd=" << s.ff->cmd << "\n";
+        std::cerr << "[Logger] ffmpeg fwrite failed (errno: " << std::strerror(errno) << "). cmd=" << s.ff->cmd << std::endl;
     }
     std::fflush(s.ff->pipe.get());
 }

@@ -25,7 +25,7 @@ int main()
     int rc = 0;
     if ((rc = Serial_Init("/dev/ttyUSB0")) != 0)
     {
-        std::cout << "serial open error: " << rc << std::endl;
+        vlog.text << "serial open error: " << rc << std::endl;
         return -10;
     }
 
@@ -33,7 +33,7 @@ int main()
     params.videoDev = "/dev/video0";
     if ((rc = Controller_Start(params)) != 0)
     {
-        std::cout << "controller start error: " << rc << std::endl;
+        vlog.text << "controller start error: " << rc << std::endl;
         return -20;
     }
 
@@ -43,6 +43,8 @@ int main()
     }
 
     vlog.CloseAll();
+
+    std::cout << "vlog stops" << std::endl;
 
     return 0;
 }

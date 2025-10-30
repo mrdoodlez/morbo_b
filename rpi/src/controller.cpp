@@ -54,6 +54,93 @@ static std::queue<ControllerMsg> g_q;
 
 /*******************************************************************************/
 
+class GlobalState
+{
+public:
+    struct VodomState
+    {
+        uint64_t t_us = 0;
+        bool valid = false;
+        float dx_f = 0.f; // filtered
+        float dy_f = 0.f; // filtered
+        float quality = 0.f;
+    };
+
+    struct ControlTargets
+    {
+        float dx_target_m; // where we want the tag relative to us
+        float dy_target_m;
+    };
+
+    void setVodom(const VodomMsg &v)
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+
+        // 1) basic validity
+        bool detected = (v.status != VodomMsg::VODOM_NOT_DETECTED);
+        if (!detected)
+        {
+            vodom_.valid = false;
+            vodom_.t_us = v.t_us;
+            return;
+        }
+
+        // 2) quality gate (tune!)
+        if (v.quality < 0.15f)
+        {
+            // too weak → mark invalid but keep timestamp
+            vodom_.valid = false;
+            vodom_.t_us = v.t_us;
+            return;
+        }
+
+        // 3) EMA filter
+        // alpha closer to 1.0 → more responsive
+        constexpr float alpha = 0.4f;
+        if (!vodom_.valid)
+        {
+            // first detection → hard set
+            vodom_.dx_f = v.dx_m;
+            vodom_.dy_f = v.dy_m;
+        }
+        else
+        {
+            vodom_.dx_f = (1.f - alpha) * vodom_.dx_f + alpha * v.dx_m;
+            vodom_.dy_f = (1.f - alpha) * vodom_.dy_f + alpha * v.dy_m;
+        }
+
+        vodom_.t_us = v.t_us;
+        vodom_.quality = v.quality;
+        vodom_.valid = true;
+    }
+
+    VodomState getVodom() const
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return vodom_;
+    }
+
+    void setTarget(float dx, float dy)
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        targets_.dx_target_m = dx;
+        targets_.dy_target_m = dy;
+    }
+
+    ControlTargets getTargets() const
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return targets_;
+    }
+
+private:
+    mutable std::mutex mtx_;
+    VodomState vodom_{};
+    ControlTargets targets_{};
+} g_state;
+
+/*******************************************************************************/
+
 uint64_t Controller_NowMs()
 {
     using clock = std::chrono::steady_clock;
@@ -64,7 +151,9 @@ uint64_t Controller_NowMs()
 
 int Controller_Start(const ControllerParams &params)
 {
-    Controller_LoadParams();
+    Controller_LoadParams(); // TODO: move this to main()
+
+    g_state.setTarget(1.0, 0.0); // <- read from params;
 
     Comm_Start();
 
@@ -75,7 +164,7 @@ int Controller_Start(const ControllerParams &params)
         return -10;
     }
 
-    rc = Vodom_Start(params.videoDev);
+    rc = Vodom_Start(params.videoDev /* this should be not arg as well */);
     if (rc)
     {
         vlog.text << "Visual odometry start failed, rc: " << rc << std::endl;
@@ -196,16 +285,70 @@ int Controller_PostMessage(const ControllerMsg &m)
     return 0;
 }
 
+static void _SendRelativeMove(float dx_m, float dy_m)
+{
+    HIP_Payload_SetPos_t pd;
+
+    pd.x = dx_m;
+    pd.y = dy_m;
+    pd.flags = HIP_SetPos_Flags_IsRelative;
+
+    HostIface_PutData(HIP_MSG_SET_POS, (uint8_t *)&pd, sizeof(pd));
+    HostIface_Send();
+}
+
+// how old VO can be
+static constexpr uint64_t VODOM_STALE_US = 300000; // 300 ms
+// command rate
+static constexpr std::chrono::milliseconds CMD_PERIOD_MS(1000); // 1 Hz
+
 static void _OnHeartbeat(uint64_t ts_ms)
 {
-    // Periodic control tick (plan, fuse, emit commands, timeouts, etc.)
-    // Example skeleton:
-    // controller.FuseSensors();
-    // controller.EvaluateScenario();
-    // controller.EmitActuatorCommands();
-    (void)ts_ms;
+    static auto last_cmd_time = std::chrono::steady_clock::now();
 
-    vlog.text << __func__ << std::endl;
+    GlobalState::VodomState vo = g_state.getVodom();
+    GlobalState::ControlTargets tgt = g_state.getTargets();
+
+    uint64_t now_us = ts_ms * 1000ULL;
+    bool fresh = vo.valid && (now_us - vo.t_us) < VODOM_STALE_US;
+
+    if (!fresh)
+    {
+        return;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_cmd_time < CMD_PERIOD_MS)
+    {
+        return;
+    }
+    last_cmd_time = now;
+
+    float ex = tgt.dx_target_m - vo.dx_f; // forward/back
+    float ey = tgt.dy_target_m - vo.dy_f; // left/right
+
+    float step_x = ex;
+    float step_y = ey;
+
+    // limit step size per command
+    constexpr float STEP_MAX = 0.25f; // TODO: <- this is a parameter as well
+    auto clamp_step = [](float v)
+    {
+        if (v > STEP_MAX)
+            return STEP_MAX;
+        if (v < -STEP_MAX)
+            return -STEP_MAX;
+        return v;
+    };
+    step_x = clamp_step(step_x);
+    step_y = clamp_step(step_y);
+
+    _SendRelativeMove(step_x, step_y);
+
+    vlog.text << "[CTRL] send REL_MOVE dx=" << step_x
+              << " dy=" << step_y
+              << " (err x=" << ex << " y=" << ey << ")"
+              << std::endl;
 }
 
 static void _HandlePVT(const HIP_Payload_PVT_t &pvt)
@@ -270,16 +413,12 @@ static void _HandleVodom(const VodomMsg &v)
     using std::fixed;
     using std::setprecision;
 
-    if (v.status == VodomMsg::VodomStatus::VODOM_NOT_DETECTED)
-    {
-        vlog.text << "[VODOM] not detected, t_us=" << v.t_us << std::endl;
-        return;
-    }
-
     const char *color =
         (v.status == VodomMsg::VodomStatus::VODOM_DETECTED_RED)
-            ? "RED" : (v.status == VodomMsg::VodomStatus::VODOM_DETECTED_GREEN)
-            ? "GREEN" : "UNKNOWN";
+            ? "RED"
+        : (v.status == VodomMsg::VodomStatus::VODOM_DETECTED_GREEN)
+            ? "GREEN"
+            : "UNKNOWN";
 
     vlog.text << fixed << setprecision(3)
               << "[VODOM] Detected " << color
@@ -292,6 +431,8 @@ static void _HandleVodom(const VodomMsg &v)
               << " q=" << v.quality
               << " t_us=" << v.t_us
               << std::endl;
+
+    g_state.setVodom(v);
 }
 
 static void _HandleMessage(const ControllerMsg &m)

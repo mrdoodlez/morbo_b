@@ -13,6 +13,7 @@ static FlightScenario_Result_t Estimate();
 static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *);
+static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *);
 
 static const struct
 {
@@ -60,6 +61,7 @@ static const FlightScenarioDesc_t _descs[FlightScenario_Total] =
         {FlightScenarioFunc_Debug, FlightScenarioFlags_IsInfinite},
         {FlightScenarioFunc_VelSet, FlightScenarioFlags_IsInfinite},
         {FlightScenarioFunc_GoTo, FlightScenarioFlags_IsInfinite},
+        {FlightScenarioFunc_TrgTrack, FlightScenarioFlags_IsInfinite},
 };
 
 static struct
@@ -106,6 +108,17 @@ static struct
 
         char newInput;
     } posController;
+
+    struct
+    {
+        float dx;
+        float dy;
+        float tdx;
+        float tdy;
+
+        uint64_t lastTrgPosUs;
+        uint64_t lastCorrUs;
+    } trgTrackController;
 
     FS_PID_Koeffs_t kPid;
 
@@ -212,6 +225,18 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
         _copterState.posController.cmd.phiSet = cmd->flags & HIP_SetPos_Flags_PhiSet;
 
         _copterState.posController.newInput = 1;
+    }
+    else if (type == FlightScenario_Input_TrgPosCmd)
+    {
+        HIP_Payload_TrgPos_t *cmd = (HIP_Payload_TrgPos_t *)data;
+
+        _copterState.trgTrackController.dx = cmd->dx;
+        _copterState.trgTrackController.dy = cmd->dy;
+
+        _copterState.trgTrackController.tdx = cmd->tdx;
+        _copterState.trgTrackController.tdy = cmd->tdy;
+
+        _copterState.trgTrackController.lastTrgPosUs = Controller_GetUS();
     }
 
     return 0;
@@ -458,8 +483,10 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
             else
             {
                 float theta = 2.0f * atan2f(dyb, dxb);
-                if (theta >  M_PI) theta -= 2.0f * M_PI;
-                if (theta < -M_PI) theta += 2.0f * M_PI;
+                if (theta > M_PI)
+                    theta -= 2.0f * M_PI;
+                if (theta < -M_PI)
+                    theta += 2.0f * M_PI;
 
                 float s = sin(theta);
                 float c = cos(theta);
@@ -499,4 +526,44 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
     }
 
     return FlightScenario_Result_OK;
+}
+
+#define TRG_TRK_LOST_DT     2.0e6
+#define TRG_TRK_CORR_DT     1.0e6
+
+static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *output)
+{
+    uint64_t currUs = Controller_GetUS();
+
+    if ((currUs - _copterState.trgTrackController.lastTrgPosUs) > TRG_TRK_LOST_DT)
+    {
+        _copterState.iSum.v = 0.0;
+        _copterState.iSum.w = 0.0;
+
+        output->pwm[FS_Wheel_R] = 0.0;
+        output->pwm[FS_Wheel_L] = 0.0;
+
+        return FlightScenario_Result_OK;
+    }
+
+    if ((currUs - _copterState.trgTrackController.lastCorrUs) > TRG_TRK_CORR_DT)
+    {
+        float c = cosf(_copterState.measBuff[_copterState.epochIdx].r[2]);
+        float s = sinf(_copterState.measBuff[_copterState.epochIdx].r[2]);
+
+        float ex = _copterState.trgTrackController.dx - _copterState.trgTrackController.tdx;
+        float ey = 0.0; // TODO:;
+
+        _copterState.posController.cmd.x
+                = _copterState.measBuff[_copterState.epochIdx].p[0] + c * ex - s * ey;
+        _copterState.posController.cmd.y
+                = _copterState.measBuff[_copterState.epochIdx].p[1] + s * ex + c * ey;
+
+        _copterState.posController.cmd.phiSet = 0;
+        _copterState.posController.newInput = 1;
+
+        _copterState.trgTrackController.lastCorrUs = currUs;
+    }
+
+    return FlightScenarioFunc_GoTo(output);
 }

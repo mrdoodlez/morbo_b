@@ -37,12 +37,13 @@ enum IMU_Mode_t
     IMU_Mode_Fusion,  /*4*/
 };
 
-enum FlightScenario_t
+enum FlightScenario_t // TODO: move this enum to some shared area
 {
     FlightScenario_None,
     FlightScenario_Debug,
     FlightScenario_VelSet,
     FlightScenario_GoTo,
+    FlightScenario_TrgTrack,
 
     FlightScenario_Total,
 };
@@ -177,7 +178,7 @@ int Controller_Start(const ControllerParams &params)
 
 static int _RoverConfig()
 {
-    if (_SetWorkMode(IMU_Mode_Fusion, FlightScenario_GoTo))
+    if (_SetWorkMode(IMU_Mode_Fusion, FlightScenario_TrgTrack))
         return -10;
 
     if (_EnableMessage(HIP_MSG_PVT, 100))
@@ -285,16 +286,24 @@ int Controller_PostMessage(const ControllerMsg &m)
     return 0;
 }
 
-static void _SendRelativeMove(float dx_m, float dy_m)
+static void _SendTrgPos(float dx_m, float dy_m)
 {
-    HIP_Payload_SetPos_t pd;
+    HIP_Payload_TrgPos_t tp;
 
-    pd.x = dx_m;
-    pd.y = dy_m;
-    pd.flags = HIP_SetPos_Flags_IsRelative;
+    tp.dx = dx_m;
+    tp.dy = dy_m;
+    tp.flags = HIP_TrgPos_Flags_TrgLocked;
 
-    HostIface_PutData(HIP_MSG_SET_POS, (uint8_t *)&pd, sizeof(pd));
-    HostIface_Send();
+    GlobalState::ControlTargets tgt = g_state.getTargets();
+
+    tp.tdx = tgt.dx_target_m;
+    tp.tdy = tgt.dy_target_m;
+
+    HostIface_PutData(HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
+    HostIface_Send(); // TODO: do we wait for ack here?
+
+    vlog.text << "[CTRL] send TRG_POS dx="
+        << tp.dx << " dy=" << tp.dy << std::endl;
 }
 
 // how old VO can be
@@ -307,7 +316,6 @@ static void _OnHeartbeat(uint64_t ts_ms)
     static auto last_cmd_time = std::chrono::steady_clock::now();
 
     GlobalState::VodomState vo = g_state.getVodom();
-    GlobalState::ControlTargets tgt = g_state.getTargets();
 
     uint64_t now_us = ts_ms * 1000ULL;
     bool fresh = vo.valid && (now_us - vo.t_us) < VODOM_STALE_US;
@@ -324,31 +332,7 @@ static void _OnHeartbeat(uint64_t ts_ms)
     }
     last_cmd_time = now;
 
-    float ex = tgt.dx_target_m - vo.dx_f; // forward/back
-    float ey = tgt.dy_target_m - vo.dy_f; // left/right
-
-    float step_x = ex;
-    float step_y = ey;
-
-    // limit step size per command
-    constexpr float STEP_MAX = 0.25f; // TODO: <- this is a parameter as well
-    auto clamp_step = [](float v)
-    {
-        if (v > STEP_MAX)
-            return STEP_MAX;
-        if (v < -STEP_MAX)
-            return -STEP_MAX;
-        return v;
-    };
-    step_x = clamp_step(step_x);
-    step_y = clamp_step(step_y);
-
-    _SendRelativeMove(step_x, step_y);
-
-    vlog.text << "[CTRL] send REL_MOVE dx=" << step_x
-              << " dy=" << step_y
-              << " (err x=" << ex << " y=" << ey << ")"
-              << std::endl;
+    _SendTrgPos(vo.dx_f, vo.dy_f);
 }
 
 static void _HandlePVT(const HIP_Payload_PVT_t &pvt)

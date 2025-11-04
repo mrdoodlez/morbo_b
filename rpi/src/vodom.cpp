@@ -346,6 +346,12 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
 
             // simple quality: normalized fill clamped, scaled by diameter
             out.quality = std::min(1.f, std::max(0.f, best.fill)) * std::min(1.f, dpx / 80.f);
+
+            if (out.range_m > 2.0f)
+            {
+                out.quality = std::min(out.quality, 0.1f);
+            }
+
             out.status = VodomMsg::VodomStatus::VODOM_DETECTED_RED;
 
             ControllerMsg msg{};

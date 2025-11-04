@@ -26,6 +26,7 @@ extern "C"
 #define HIP_MSG_SET_PID 0x0600
 #define HIP_MSG_SET_VELS 0x0700
 #define HIP_MSG_SET_POS 0x0701
+#define HIP_MSG_TRG_POS 0x0702
 
 #define HIP_MSG_PAT 0x0A00
 #define HIP_MSG_ACC 0x0A01
@@ -309,6 +310,27 @@ extern "C"
         HIP_Payload_SetPos_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_SetPos_t;
+
+    typedef enum
+    {
+        HIP_TrgPos_Flags_TrgLocked = 1 << 0,
+    } HIP_TrgPos_Flags_t;
+
+    typedef struct
+    {
+        float dx;
+        float dy;
+        float tdx;
+        float tdy;
+        uint8_t flags;
+    } __attribute__((packed)) HIP_Payload_TrgPos_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        HIP_Payload_TrgPos_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_TrgPos_t;
 
     typedef struct
     {

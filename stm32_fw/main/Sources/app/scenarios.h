@@ -16,6 +16,7 @@ extern "C"
         FlightScenario_Debug,
         FlightScenario_VelSet,
         FlightScenario_GoTo,
+        FlightScenario_TrgTrack,
 
         FlightScenario_Total,
     } FlightScenario_t;
@@ -33,6 +34,7 @@ extern "C"
         FlightScenario_Input_DebugPwms,
         FlightScenario_Input_VelCmd,
         FlightScenario_Input_PosCmd,
+        FlightScenario_Input_TrgPosCmd,
     } FlightScenario_Input_t;
 
     typedef enum

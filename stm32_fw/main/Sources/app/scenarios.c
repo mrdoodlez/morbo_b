@@ -552,7 +552,7 @@ static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *out
         float s = sinf(_copterState.measBuff[_copterState.epochIdx].r[2]);
 
         float ex = _copterState.trgTrackController.dx - _copterState.trgTrackController.tdx;
-        float ey = 0.0; // TODO:;
+        float ey = _copterState.trgTrackController.dy - _copterState.trgTrackController.tdy;
 
         _copterState.posController.cmd.x
                 = _copterState.measBuff[_copterState.epochIdx].p[0] + c * ex - s * ey;

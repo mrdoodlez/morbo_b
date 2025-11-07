@@ -78,7 +78,7 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
 
         // 1) basic validity
-        bool detected = (v.status != VodomMsg::VODOM_NOT_DETECTED);
+        bool detected = (v.status == VodomMsg::VodomStatus::DETECTED);
         if (!detected)
         {
             vodom_.valid = false;
@@ -154,7 +154,7 @@ int Controller_Start(const ControllerParams &params)
 {
     Controller_LoadParams(); // TODO: move this to main()
 
-    g_state.setTarget(1.0, 0.0); // <- read from params;
+    g_state.setTarget(0.5, 0.0); // <- read from params;
 
     Comm_Start();
 
@@ -309,7 +309,7 @@ static void _SendTrgPos(float dx_m, float dy_m)
 // how old VO can be
 static constexpr uint64_t VODOM_STALE_US = 300000; // 300 ms
 // command rate
-static constexpr std::chrono::milliseconds CMD_PERIOD_MS(1000); // 1 Hz
+static constexpr std::chrono::milliseconds CMD_PERIOD_MS(500);
 
 static void _OnHeartbeat(uint64_t ts_ms)
 {
@@ -398,11 +398,7 @@ static void _HandleVodom(const VodomMsg &v)
     using std::setprecision;
 
     const char *color =
-        (v.status == VodomMsg::VodomStatus::VODOM_DETECTED_RED)
-            ? "RED"
-        : (v.status == VodomMsg::VodomStatus::VODOM_DETECTED_GREEN)
-            ? "GREEN"
-            : "UNKNOWN";
+        (v.status == VodomMsg::VodomStatus::DETECTED) ? "RED" :  "UNKNOWN";
 
     vlog.text << fixed << setprecision(3)
               << "[VODOM] Detected " << color

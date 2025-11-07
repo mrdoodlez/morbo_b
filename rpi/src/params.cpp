@@ -29,10 +29,6 @@ int Controller_LoadParams()
     g_vodomParams.H = 600;
     g_vodomParams.FPS = 30;
 
-    // -------- Target geometry --------
-    // Diameter of your signal disk (adjust if different)
-    g_vodomParams.disc_D_m = 0.105f; // 105 mm
-
     // -------- Intrinsics (from your C920 calibration @ 640x480) --------
     // K (3x3, CV_64F)
     g_vodomParams.K = (cv::Mat_<double>(3, 3) << 650.3330, 0.0, 331.8511,
@@ -53,28 +49,15 @@ int Controller_LoadParams()
                          0, -1, 0);
     g_vodomParams.tbc = cv::Mat::zeros(3, 1, CV_64F);
 
-    // -------- HSV thresholds (red) --------
-
-    g_vodomParams.Hmin = 165;
-    g_vodomParams.Smin = 150;
-    g_vodomParams.Vmin = 50;
-
-    // -------- Morphology --------
-    g_vodomParams.morph_open = 10;
-    g_vodomParams.morph_close = 15;
-
-    // -------- Detection thresholds --------
-    g_vodomParams.dpx_min = 12;
-    g_vodomParams.dpx_max = 300;
-    g_vodomParams.max_axis_ratio = 1.20f;
-    g_vodomParams.min_color_fill = 0.65f;
-
     // -------- Temporal filtering --------
     g_vodomParams.confirm_hits = 2;
     g_vodomParams.forget_miss = 3;
 
     // -------- ROI growth factor --------
     g_vodomParams.roi_expand = 2.0f;
+
+    // -------- Target geometry --------
+    g_vodomParams.tag_size_m = 0.08f;
 
     return 0;
 }

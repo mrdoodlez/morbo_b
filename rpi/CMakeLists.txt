@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # -----------------------------
 # Find OpenCV
 # -----------------------------
-find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d)
+find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d aruco)
 
 # -----------------------------
 # Source files

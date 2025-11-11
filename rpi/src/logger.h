@@ -71,6 +71,9 @@ private:
 
 class Logger
 {
+private:
+    TextLogger text_impl_;
+
 public:
     static Logger &Get();
 
@@ -194,8 +197,6 @@ private:
 
     std::mutex opts_mtx_;
     VideoOpts vopts_;
-
-    TextLogger text_impl_;
 };
 
 #define vlog (Logger::Get())

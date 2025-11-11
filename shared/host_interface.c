@@ -20,8 +20,6 @@ struct
 
 /******************************************************************************/
 
-static void _HostIface_HandleCommand(const HIP_Cmd_t *cmd);
-
 int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
 {
     HIP_Cmd_t *txCmd = (HIP_Cmd_t *)(g_coderCtx[dev].txBuffer + g_coderCtx[dev].txLen);
@@ -53,7 +51,7 @@ int HostIface_Send(int dev)
     return 0;
 }
 
-void HostIface_Listen(int dev)
+void HostIface_Listen(int dev, void (*handler)(const HIP_Cmd_t*))
 {
     enum
     {
@@ -116,7 +114,11 @@ void HostIface_Listen(int dev)
             case ProtoState_crc1:
                 g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxLen++] = c;
 
-                _HostIface_HandleCommand(&g_decoderCtx[dev].rxCmd);
+                uint16_t crc = *(uint16_t *)&(g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxCmd.header.len]);
+                if (crc == 0xCACB) // TODO: replace with real check
+                {
+                    handler(&g_decoderCtx[dev].rxCmd);
+                }
 
                 protoState = ProtoState_m;
                 break;
@@ -134,14 +136,4 @@ void HostIface_Listen(int dev)
             }
         }
     }
-}
-
-static void _HostIface_HandleCommand(const HIP_Cmd_t *cmd)
-{
-    uint16_t crc = *(uint16_t *)&(cmd->payload[cmd->header.len]);
-
-    if (crc == 0xCACB) // TODO: replace with real check
-    {
-        Controller_NewCommand(cmd);
-    } 
 }

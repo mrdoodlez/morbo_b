@@ -33,27 +33,9 @@ static void _OnNack(const HIP_Cmd_t*);
 
 std::map<uint16_t, HIP_CmdHandler> g_handlTable;
 
-void Comm_Start(int comm)
-{
-    g_handlTable[HIP_MSG_PING] = _OnPong;
-    g_handlTable[HIP_MSG_ACK ] = _OnAck;
-    g_handlTable[HIP_MSG_NAK ] = _OnNack;
+/*******************************************************************************/
 
-    std::thread([comm] {
-        HostIface_Listen(comm);
-    }).detach();
-
-    _Pinger_Start(comm);
-}
-
-void _Pinger_Start(int comm)
-{
-    std::thread([comm] {
-        _Pinger(comm);
-    }).detach();
-}
-
-void Controller_NewCommand(const HIP_Cmd_t* cmd)
+extern "C" void _Comm_NewMessage(const HIP_Cmd_t* cmd)
 {
     HIP_CmdHandler handler = nullptr;
 
@@ -76,6 +58,28 @@ void Controller_NewCommand(const HIP_Cmd_t* cmd)
 
         Controller_PostMessage(rovMsg);
     }
+}
+
+/*******************************************************************************/
+
+void Comm_Start(int comm)
+{
+    g_handlTable[HIP_MSG_PING] = _OnPong;
+    g_handlTable[HIP_MSG_ACK ] = _OnAck;
+    g_handlTable[HIP_MSG_NAK ] = _OnNack;
+
+    std::thread([comm] {
+        HostIface_Listen(comm, _Comm_NewMessage);
+    }).detach();
+
+    _Pinger_Start(comm);
+}
+
+void _Pinger_Start(int comm)
+{
+    std::thread([comm] {
+        _Pinger(comm);
+    }).detach();
 }
 
 /*******************************************************************************/

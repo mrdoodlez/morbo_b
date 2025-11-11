@@ -12,9 +12,7 @@ extern "C"
 int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len);
 int HostIface_Send(int dev);
 
-void HostIface_Listen(int dev);
-
-void Controller_NewCommand(const HIP_Cmd_t* cmd);
+void HostIface_Listen(int dev, void (*handler)(const HIP_Cmd_t*));
 
 #ifdef __cplusplus
 }

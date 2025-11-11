@@ -31,6 +31,7 @@ struct ControllerMsg
     {
         TYPE_VODOM,
         TYPE_ROVER,
+        TYPE_HOST,
     } type;
 
     ControllerMsgPayload payload;

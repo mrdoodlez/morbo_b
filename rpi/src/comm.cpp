@@ -9,8 +9,8 @@
 #include <map>
 #include "logger.h"
 
-static void _Pinger();
-static void _Pinger_Start();
+static void _Pinger(int comm);
+static void _Pinger_Start(int comm);
 
 std::mutex              g_mtx;
 std::condition_variable g_cv;
@@ -33,23 +33,23 @@ static void _OnNack(const HIP_Cmd_t*);
 
 std::map<uint16_t, HIP_CmdHandler> g_handlTable;
 
-void Comm_Start()
+void Comm_Start(int comm)
 {
     g_handlTable[HIP_MSG_PING] = _OnPong;
     g_handlTable[HIP_MSG_ACK ] = _OnAck;
     g_handlTable[HIP_MSG_NAK ] = _OnNack;
 
-    std::thread([] {
-        HostIface_Listen();
+    std::thread([comm] {
+        HostIface_Listen(comm);
     }).detach();
 
-    _Pinger_Start();
+    _Pinger_Start(comm);
 }
 
-void _Pinger_Start()
+void _Pinger_Start(int comm)
 {
-    std::thread([] {
-        _Pinger();
+    std::thread([comm] {
+        _Pinger(comm);
     }).detach();
 }
 
@@ -159,14 +159,14 @@ static int _WaitForPong(uint16_t seq, std::chrono::milliseconds timeout)
     return -1;
 }
 
-static void _Pinger()
+static void _Pinger(int comm)
 {
     uint16_t txSeq = 0;
     int noPongCnt = 0;
     for (;;)
     {
-        HostIface_PutData(HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
-        HostIface_Send();
+        HostIface_PutData(comm, HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
+        HostIface_Send(comm);
 
         if (_WaitForPong(txSeq, std::chrono::milliseconds(200)) == 0)
         {

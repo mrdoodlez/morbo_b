@@ -7,6 +7,7 @@
 
 struct ControllerParams
 {
+    std::string mcuDev;
     std::string videoDev;
 };
 

@@ -3,27 +3,28 @@
 #include "serial.h"
 
 #define HIP_TX_SIZE 1024
+#define COMM_CNT    2
 struct
 {
     HIP_Cmd_t rxCmd;
     uint16_t rxLen;
     uint32_t numRxBytes;
-} g_decoderCtx;
+} g_decoderCtx[COMM_CNT];
 
 struct
 {
     uint8_t txBuffer[HIP_TX_SIZE];
     uint8_t txLen;
     uint32_t numTxBytes;
-} g_coderCtx;
+} g_coderCtx[COMM_CNT];
 
 /******************************************************************************/
 
 static void _HostIface_HandleCommand(const HIP_Cmd_t *cmd);
 
-int HostIface_PutData(uint16_t id, const uint8_t *buff, uint16_t len)
+int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
 {
-    HIP_Cmd_t *txCmd = (HIP_Cmd_t *)(g_coderCtx.txBuffer + g_coderCtx.txLen);
+    HIP_Cmd_t *txCmd = (HIP_Cmd_t *)(g_coderCtx[dev].txBuffer + g_coderCtx[dev].txLen);
 
     txCmd->header.m = 'm';
     txCmd->header.b = 'b';
@@ -34,25 +35,25 @@ int HostIface_PutData(uint16_t id, const uint8_t *buff, uint16_t len)
 
     *(uint16_t *)&(txCmd->payload[len]) = 0xCACB; // replace with real CRC
 
-    g_coderCtx.txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
+    g_coderCtx[dev].txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
 
     return 0;
 }
 
-int HostIface_Send()
+int HostIface_Send(int dev)
 {
-    if (g_coderCtx.txLen > 0)
+    if (g_coderCtx[dev].txLen > 0)
     {
-        int sz = g_coderCtx.txLen;
-        Serial_Write(HIP_SERIAL, g_coderCtx.txBuffer, sz);
-        g_coderCtx.numTxBytes += sz;
-        g_coderCtx.txLen = 0;
+        int sz = g_coderCtx[dev].txLen;
+        Serial_Write(dev, g_coderCtx[dev].txBuffer, sz);
+        g_coderCtx[dev].numTxBytes += sz;
+        g_coderCtx[dev].txLen = 0;
     }
 
     return 0;
 }
 
-void HostIface_Listen()
+void HostIface_Listen(int dev)
 {
     enum
     {
@@ -70,9 +71,9 @@ void HostIface_Listen()
     while (1)
     {
         uint8_t c;
-        if (Serial_Read(HIP_SERIAL, &c, 1) == 1)
+        if (Serial_Read(dev, &c, 1) == 1)
         {
-            g_decoderCtx.numRxBytes++;
+            g_decoderCtx[dev].numRxBytes++;
             switch (protoState)
             {
             case ProtoState_b:
@@ -82,40 +83,40 @@ void HostIface_Listen()
                     protoState = ProtoState_m;
                 break;
             case ProtoState_cmd0:
-                g_decoderCtx.rxCmd.header.cmd = c;
+                g_decoderCtx[dev].rxCmd.header.cmd = c;
                 protoState = ProtoState_cmd1;
                 break;
             case ProtoState_cmd1:
-                g_decoderCtx.rxCmd.header.cmd |= (uint16_t)c << 8;
+                g_decoderCtx[dev].rxCmd.header.cmd |= (uint16_t)c << 8;
                 protoState = ProtoState_len0;
                 break;
             case ProtoState_len0:
-                g_decoderCtx.rxCmd.header.len = c;
+                g_decoderCtx[dev].rxCmd.header.len = c;
                 protoState = ProtoState_len1;
                 break;
             case ProtoState_len1:
-                g_decoderCtx.rxCmd.header.len |= (uint16_t)c << 8;
+                g_decoderCtx[dev].rxCmd.header.len |= (uint16_t)c << 8;
                 protoState = ProtoState_payload;
                 break;
             case ProtoState_payload:
-                if ((g_decoderCtx.rxLen < g_decoderCtx.rxCmd.header.len) &&
-                    (g_decoderCtx.rxLen < HIP_MAX_PAYLOAD - 2))
+                if ((g_decoderCtx[dev].rxLen < g_decoderCtx[dev].rxCmd.header.len) &&
+                    (g_decoderCtx[dev].rxLen < HIP_MAX_PAYLOAD - 2))
                 {
-                    g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
-                    if (g_decoderCtx.rxLen == g_decoderCtx.rxCmd.header.len)
+                    g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxLen++] = c;
+                    if (g_decoderCtx[dev].rxLen == g_decoderCtx[dev].rxCmd.header.len)
                         protoState = ProtoState_crc0;
                 }
                 else
                     protoState = ProtoState_m;
                 break;
             case ProtoState_crc0:
-                g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
+                g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxLen++] = c;
                 protoState = ProtoState_crc1;
                 break;
             case ProtoState_crc1:
-                g_decoderCtx.rxCmd.payload[g_decoderCtx.rxLen++] = c;
+                g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxLen++] = c;
 
-                _HostIface_HandleCommand(&g_decoderCtx.rxCmd);
+                _HostIface_HandleCommand(&g_decoderCtx[dev].rxCmd);
 
                 protoState = ProtoState_m;
                 break;
@@ -123,9 +124,9 @@ void HostIface_Listen()
             default:
                 if (c == HIP_SYMBOL_M)
                 {
-                    g_decoderCtx.rxCmd.header.len = 0;
-                    g_decoderCtx.rxCmd.header.cmd = 0;
-                    g_decoderCtx.rxLen = 0;
+                    g_decoderCtx[dev].rxCmd.header.len = 0;
+                    g_decoderCtx[dev].rxCmd.header.cmd = 0;
+                    g_decoderCtx[dev].rxLen = 0;
 
                     protoState = ProtoState_b;
                 }

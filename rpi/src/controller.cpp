@@ -5,6 +5,7 @@
 #include "host_interface_cmds.h"
 #include "host_interface.h"
 #include "logger.h"
+#include "serial.h"
 
 #include <string>
 #include <thread>
@@ -52,6 +53,8 @@ static std::thread g_ctrlThread;
 static std::mutex g_mtx;
 static std::condition_variable g_cv;
 static std::queue<ControllerMsg> g_q;
+
+static const int commMcu = 0;
 
 /*******************************************************************************/
 
@@ -156,20 +159,27 @@ int Controller_Start(const ControllerParams &params)
 
     g_state.setTarget(0.5, 0.0); // <- read from params;
 
-    Comm_Start();
-
-    int rc = _RoverConfig();
+    int rc = Serial_Init(commMcu, params.mcuDev.c_str());
     if (rc)
     {
-        vlog.text << "Rover config failed, rc: " << rc << std::endl;
+        vlog.text << "serial open error: " << rc << std::endl;
         return -10;
     }
 
-    rc = Vodom_Start(params.videoDev /* this should be not arg as well */);
+    Comm_Start(commMcu);
+
+    rc = _RoverConfig();
+    if (rc)
+    {
+        vlog.text << "Rover config failed, rc: " << rc << std::endl;
+        return -20;
+    }
+
+    rc = 0; //Vodom_Start(params.videoDev /* this should be not arg as well */);
     if (rc)
     {
         vlog.text << "Visual odometry start failed, rc: " << rc << std::endl;
-        return -10;
+        return -30;
     }
 
     g_ctrlThread = std::thread(_Worker);
@@ -194,8 +204,8 @@ static int _RoverConfig()
 
 static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
 {
-    HostIface_PutData(id, buff, len);
-    HostIface_Send();
+    HostIface_PutData(commMcu, id, buff, len);
+    HostIface_Send(commMcu);
 
     bool isAck;
     int rc = WaitForAck(id, std::chrono::milliseconds(500), isAck);
@@ -299,8 +309,8 @@ static void _SendTrgPos(float dx_m, float dy_m)
     tp.tdx = tgt.dx_target_m;
     tp.tdy = tgt.dy_target_m;
 
-    HostIface_PutData(HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
-    HostIface_Send(); // TODO: do we wait for ack here?
+    HostIface_PutData(commMcu, HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
+    HostIface_Send(commMcu); // TODO: do we wait for ack here?
 
     vlog.text << "[CTRL] send TRG_POS dx="
         << tp.dx << " dy=" << tp.dy << std::endl;

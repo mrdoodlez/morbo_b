@@ -4,6 +4,9 @@ project(vpos LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+#set(CMAKE_CXX_FLAGS "-O0 -g3 -ggdb3 -fno-omit-frame-pointer -Wall -Wextra")
+#set(CMAKE_C_FLAGS   "-O0 -g3 -ggdb3 -fno-omit-frame-pointer -Wall -Wextra")
+
 # -----------------------------
 # Find OpenCV
 # -----------------------------

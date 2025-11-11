@@ -1,5 +1,4 @@
 #include <iostream>
-#include "serial.h"
 #include "controller.h"
 #include <iostream>
 #include <atomic>
@@ -23,13 +22,9 @@ int main()
 
     std::cout << "vpos starts\n";
     int rc = 0;
-    if ((rc = Serial_Init("/dev/ttyUSB0")) != 0)
-    {
-        vlog.text << "serial open error: " << rc << std::endl;
-        return -10;
-    }
 
     ControllerParams params;
+    params.mcuDev = "/dev/ttyUSB0";
     params.videoDev = "/dev/video0";
     if ((rc = Controller_Start(params)) != 0)
     {

@@ -4,13 +4,21 @@
 #include <cstdint>
 #include <cstddef>
 #include <mutex>
+#include <map>
 
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 
-std::mutex g_write_mtx; // protects concurrent writers to the same fd
-static int g_fd = -100500;
+struct Serial
+{
+    Serial() : fd(-100500) {}
+
+    std::mutex mtx;
+    int fd;
+};
+
+static std::map<int, Serial> ports;
 
 static bool configure_port_115200_8N1(int fd)
 {
@@ -42,40 +50,38 @@ static bool configure_port_115200_8N1(int fd)
     return true;
 }
 
-int Serial_Init(const char* const dev)
+int Serial_Init(int dev, const char* const path)
 {
-    if (!dev)
+    if (!path)
         return -10;
 
-    g_fd = ::open(dev, O_RDWR | O_NOCTTY);
-    if (g_fd < 0)
+    ports[dev].fd = ::open(path, O_RDWR | O_NOCTTY);
+    if (ports[dev].fd < 0)
         return -20;
 
     // Ensure blocking mode
-    int flags = fcntl(g_fd, F_GETFL, 0);
+    int flags = fcntl(ports[dev].fd, F_GETFL, 0);
     if (flags >= 0)
-        fcntl(g_fd, F_SETFL, flags & ~O_NONBLOCK);
+        fcntl(ports[dev].fd, F_SETFL, flags & ~O_NONBLOCK);
 
-    if (!configure_port_115200_8N1(g_fd))
+    if (!configure_port_115200_8N1(ports[dev].fd))
     {
-        ::close(g_fd);
+        ::close(ports[dev].fd);
         return -30;
     }
 
     return 0;
 }
 
-size_t Serial_Read(int unused, uint8_t* buff, size_t count)
+size_t Serial_Read(int dev, uint8_t* buff, size_t count)
 {
-    (void)unused;
-
-    if (g_fd < 0 || !buff || count == 0)
+    if (ports[dev].fd < 0 || !buff || count == 0)
         return static_cast<size_t>(-1);
 
     size_t got = 0;
     while (got < count)
     {
-        ssize_t n = ::read(g_fd, buff + got, count - got);
+        ssize_t n = ::read(ports[dev].fd, buff + got, count - got);
         if (n > 0)
         {
             got += static_cast<size_t>(n);
@@ -95,19 +101,17 @@ size_t Serial_Read(int unused, uint8_t* buff, size_t count)
     return got;
 }
 
-size_t Serial_Write(int unused, const uint8_t* buff, size_t count)
+size_t Serial_Write(int dev, const uint8_t* buff, size_t count)
 {
-    (void)unused;
-
-    if (g_fd < 0 || !buff || count == 0)
+    if (ports[dev].fd < 0 || !buff || count == 0)
         return static_cast<size_t>(-1);
 
-    std::lock_guard<std::mutex> lk(g_write_mtx);
+    std::lock_guard<std::mutex> lk(ports[dev].mtx);
 
     size_t sent = 0;
     while (sent < count)
     {
-        ssize_t n = ::write(g_fd, buff + sent, count - sent);
+        ssize_t n = ::write(ports[dev].fd, buff + sent, count - sent);
         if (n > 0)
         {
             sent += static_cast<size_t>(n);

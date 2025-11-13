@@ -7,6 +7,7 @@
 #include <mutex>
 #include <iostream>
 #include <map>
+#include "serial.h"
 #include "logger.h"
 
 static void _Pinger(int comm);
@@ -69,7 +70,7 @@ void Comm_Start(int comm)
     g_handlTable[HIP_MSG_NAK ] = _OnNack;
 
     std::thread([comm] {
-        HostIface_Listen(comm, _Comm_NewMessage);
+        HostIface_Listen(comm, Serial_Read, _Comm_NewMessage);
     }).detach();
 
     _Pinger_Start(comm);
@@ -170,7 +171,7 @@ static void _Pinger(int comm)
     for (;;)
     {
         HostIface_PutData(comm, HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
-        HostIface_Send(comm);
+        HostIface_Send(comm, Serial_Write);
 
         if (_WaitForPong(txSeq, std::chrono::milliseconds(200)) == 0)
         {

@@ -167,6 +167,10 @@ static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
         std::vector<std::vector<cv::Point2f>> corners;
         cv::aruco::detectMarkers(view, dict, corners, ids, detParams);
 
+        cv::Mat dbg_markers = view.clone();
+        cv::aruco::drawDetectedMarkers(dbg_markers, corners, ids);
+        vlog.Write("aruco_markers", dbg_markers);
+
         struct Cand
         {
             cv::Point2f c;

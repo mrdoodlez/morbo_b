@@ -1,6 +1,5 @@
 #include "host_interface.h"
 #include "host_interface_cmds.h"
-#include "serial.h"
 
 #define HIP_TX_SIZE 1024
 #define COMM_CNT    2
@@ -38,12 +37,12 @@ int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
     return 0;
 }
 
-int HostIface_Send(int dev)
+int HostIface_Send(int dev, size_t (*write_fn)(int, const uint8_t*, size_t))
 {
     if (g_coderCtx[dev].txLen > 0)
     {
         int sz = g_coderCtx[dev].txLen;
-        Serial_Write(dev, g_coderCtx[dev].txBuffer, sz);
+        write_fn(dev, g_coderCtx[dev].txBuffer, sz);
         g_coderCtx[dev].numTxBytes += sz;
         g_coderCtx[dev].txLen = 0;
     }
@@ -51,7 +50,7 @@ int HostIface_Send(int dev)
     return 0;
 }
 
-void HostIface_Listen(int dev, void (*handler)(const HIP_Cmd_t*))
+void HostIface_Listen(int dev, size_t (*read_fn)(int, uint8_t*, size_t), void (*handler)(const HIP_Cmd_t*))
 {
     enum
     {
@@ -69,7 +68,7 @@ void HostIface_Listen(int dev, void (*handler)(const HIP_Cmd_t*))
     while (1)
     {
         uint8_t c;
-        if (Serial_Read(dev, &c, 1) == 1)
+        if (read_fn(dev, &c, 1) == 1)
         {
             g_decoderCtx[dev].numRxBytes++;
             switch (protoState)

@@ -21,12 +21,12 @@ find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d aruco)
 add_executable(vpos
     src/main.cpp
     src/comm.cpp
-    src/host.cpp
     src/serial.cpp
     src/controller.cpp
     src/vodom.cpp
     src/params.cpp
     src/logger.cpp
+    src/tcp_server.cpp
     ../shared/host_interface.c
 )
 

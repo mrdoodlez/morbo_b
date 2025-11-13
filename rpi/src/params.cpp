@@ -57,7 +57,7 @@ int Controller_LoadParams()
     g_vodomParams.roi_expand = 2.0f;
 
     // -------- Target geometry --------
-    g_vodomParams.tag_size_m = 0.08f;
+    g_vodomParams.tag_size_m = 0.105f;
 
     return 0;
 }

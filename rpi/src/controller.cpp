@@ -6,6 +6,7 @@
 #include "host_interface.h"
 #include "logger.h"
 #include "serial.h"
+#include "tcp_server.h"
 
 #include <string>
 #include <thread>
@@ -175,11 +176,18 @@ int Controller_Start(const ControllerParams &params)
         return -20;
     }
 
-    rc = 0; //Vodom_Start(params.videoDev /* this should be not arg as well */);
+    rc = Vodom_Start(params.videoDev /* this should be not arg as well */);
     if (rc)
     {
         vlog.text << "Visual odometry start failed, rc: " << rc << std::endl;
         return -30;
+    }
+
+    rc = P2pLink_Init(5555);
+    if (rc)
+    {
+        vlog.text << "TCT server start failed, rc: " << rc << std::endl;
+        return -40;
     }
 
     g_ctrlThread = std::thread(_Worker);
@@ -205,7 +213,7 @@ static int _RoverConfig()
 static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
 {
     HostIface_PutData(commMcu, id, buff, len);
-    HostIface_Send(commMcu);
+    HostIface_Send(commMcu, Serial_Write);
 
     bool isAck;
     int rc = WaitForAck(id, std::chrono::milliseconds(500), isAck);
@@ -310,7 +318,7 @@ static void _SendTrgPos(float dx_m, float dy_m)
     tp.tdy = tgt.dy_target_m;
 
     HostIface_PutData(commMcu, HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
-    HostIface_Send(commMcu); // TODO: do we wait for ack here?
+    HostIface_Send(commMcu, Serial_Write); // TODO: do we wait for ack here?
 
     vlog.text << "[CTRL] send TRG_POS dx="
         << tp.dx << " dy=" << tp.dy << std::endl;

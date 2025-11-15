@@ -9,6 +9,7 @@
 #include <map>
 #include "serial.h"
 #include "logger.h"
+#include "tcp_server.h"
 
 static void _Pinger(int comm);
 static void _Pinger_Start(int comm);
@@ -63,17 +64,35 @@ extern "C" void _Comm_NewMessage(const HIP_Cmd_t* cmd)
 
 /*******************************************************************************/
 
-void Comm_Start(int comm)
+void Comm_Start(int mcu, int hst)
 {
+    HostIface_Callbacks_t mcuCbs =
+    {
+        .read_fn = Serial_Read,
+        .write_fn = Serial_Write,
+        .handler = _Comm_NewMessage,
+    };
+
+    HostIface_Register(mcu, &mcuCbs);
+
+    HostIface_Callbacks_t hstCbs =
+    {
+        .read_fn = P2pLink_Read,
+        .write_fn = P2pLink_Write,
+        .handler = 0,
+    };
+
+    HostIface_Register(hst, &hstCbs);
+
     g_handlTable[HIP_MSG_PING] = _OnPong;
     g_handlTable[HIP_MSG_ACK ] = _OnAck;
     g_handlTable[HIP_MSG_NAK ] = _OnNack;
 
-    std::thread([comm] {
-        HostIface_Listen(comm, Serial_Read, _Comm_NewMessage);
+    std::thread([mcu] {
+        HostIface_Listen(mcu);
     }).detach();
 
-    _Pinger_Start(comm);
+    _Pinger_Start(mcu);
 }
 
 void _Pinger_Start(int comm)
@@ -171,7 +190,7 @@ static void _Pinger(int comm)
     for (;;)
     {
         HostIface_PutData(comm, HIP_MSG_PING, (uint8_t *)&txSeq, sizeof(txSeq));
-        HostIface_Send(comm, Serial_Write);
+        HostIface_Send(comm);
 
         if (_WaitForPong(txSeq, std::chrono::milliseconds(200)) == 0)
         {

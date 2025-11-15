@@ -31,8 +31,6 @@ static std::condition_variable g_conn_cv;
 
 static std::mutex g_write_mtx;
 
-static std::thread g_accept_thread;
-
 static void acceptLoop(uint16_t port)
 {
     // Create listening socket
@@ -131,7 +129,7 @@ int P2pLink_Init(uint16_t port)
 
     try
     {
-        g_accept_thread = std::thread(acceptLoop, port);
+        std::thread(acceptLoop, port).detach();
     }
     catch (...)
     {

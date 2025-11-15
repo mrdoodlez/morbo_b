@@ -50,12 +50,12 @@ enum FlightScenario_t // TODO: move this enum to some shared area
     FlightScenario_Total,
 };
 
-static std::thread g_ctrlThread;
 static std::mutex g_mtx;
 static std::condition_variable g_cv;
 static std::queue<ControllerMsg> g_q;
 
 static const int commMcu = 0;
+static const int commHost = 1;
 
 /*******************************************************************************/
 
@@ -167,30 +167,30 @@ int Controller_Start(const ControllerParams &params)
         return -10;
     }
 
-    Comm_Start(commMcu);
+    rc = P2pLink_Init(5555);
+    if (rc)
+    {
+        vlog.text << "TCT server start failed, rc: " << rc << std::endl;
+        return -20;
+    }
+
+    Comm_Start(commMcu, commHost);
 
     rc = _RoverConfig();
     if (rc)
     {
         vlog.text << "Rover config failed, rc: " << rc << std::endl;
-        return -20;
+        return -30;
     }
 
     rc = Vodom_Start(params.videoDev /* this should be not arg as well */);
     if (rc)
     {
         vlog.text << "Visual odometry start failed, rc: " << rc << std::endl;
-        return -30;
-    }
-
-    rc = P2pLink_Init(5555);
-    if (rc)
-    {
-        vlog.text << "TCT server start failed, rc: " << rc << std::endl;
         return -40;
     }
 
-    g_ctrlThread = std::thread(_Worker);
+    std::thread(_Worker).detach();
     return 0;
 }
 
@@ -213,7 +213,7 @@ static int _RoverConfig()
 static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
 {
     HostIface_PutData(commMcu, id, buff, len);
-    HostIface_Send(commMcu, Serial_Write);
+    HostIface_Send(commMcu);
 
     bool isAck;
     int rc = WaitForAck(id, std::chrono::milliseconds(500), isAck);
@@ -304,24 +304,34 @@ int Controller_PostMessage(const ControllerMsg &m)
     return 0;
 }
 
-static void _SendTrgPos(float dx_m, float dy_m)
+static void _SendTrgPos(bool valid, float dx_m, float dy_m)
 {
     HIP_Payload_TrgPos_t tp;
 
-    tp.dx = dx_m;
-    tp.dy = dy_m;
-    tp.flags = HIP_TrgPos_Flags_TrgLocked;
+    tp.flags = valid ? HIP_TrgPos_Flags_TrgLocked : 0;
+
+    if (valid)
+    {
+        tp.dx = dx_m;
+        tp.dy = dy_m;
+    }
 
     GlobalState::ControlTargets tgt = g_state.getTargets();
 
     tp.tdx = tgt.dx_target_m;
     tp.tdy = tgt.dy_target_m;
 
-    HostIface_PutData(commMcu, HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
-    HostIface_Send(commMcu, Serial_Write); // TODO: do we wait for ack here?
+    if (valid)
+    {
+        HostIface_PutData(commMcu, HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
+        HostIface_Send(commMcu);
 
-    vlog.text << "[CTRL] send TRG_POS dx="
-        << tp.dx << " dy=" << tp.dy << std::endl;
+        vlog.text << "[CTRL] send TRG_POS dx="
+            << tp.dx << " dy=" << tp.dy << std::endl;
+    }
+
+    HostIface_PutData(commHost, HIP_MSG_TRG_POS, (uint8_t *)&tp, sizeof(tp));
+    HostIface_Send(commHost);
 }
 
 // how old VO can be
@@ -336,12 +346,9 @@ static void _OnHeartbeat(uint64_t ts_ms)
     GlobalState::VodomState vo = g_state.getVodom();
 
     uint64_t now_us = ts_ms * 1000ULL;
-    bool fresh = vo.valid && (now_us - vo.t_us) < VODOM_STALE_US;
+    vo.valid = (now_us - vo.t_us) < VODOM_STALE_US;
 
-    if (!fresh)
-    {
-        return;
-    }
+    vlog.text << "[HBT] vo:" << vo.valid << std::endl;
 
     auto now = std::chrono::steady_clock::now();
     if (now - last_cmd_time < CMD_PERIOD_MS)
@@ -350,7 +357,7 @@ static void _OnHeartbeat(uint64_t ts_ms)
     }
     last_cmd_time = now;
 
-    _SendTrgPos(vo.dx_f, vo.dy_f);
+    _SendTrgPos(vo.valid, vo.dx_f, vo.dy_f);
 }
 
 static void _HandlePVT(const HIP_Payload_PVT_t &pvt)
@@ -364,6 +371,10 @@ static void _HandlePVT(const HIP_Payload_PVT_t &pvt)
               << pvt.velocity[2] << ") "
               << "t=" << pvt.time
               << std::endl;
+
+    HostIface_PutData(commHost, HIP_MSG_PVT,
+        (uint8_t *)&pvt, sizeof(HIP_Payload_PVT_t));
+    HostIface_Send(commHost);
 }
 
 static void _HandleWHT(const HIP_Payload_WHT_t &wht)
@@ -373,6 +384,10 @@ static void _HandleWHT(const HIP_Payload_WHT_t &wht)
               << " ang_vel=" << wht.ang_velocity
               << " t=" << wht.time
               << std::endl;
+
+    HostIface_PutData(commHost, HIP_MSG_WHT,
+        (uint8_t *)&wht, sizeof(HIP_Payload_WHT_t));
+    HostIface_Send(commHost);
 }
 
 // Helper: extract typed payload safely

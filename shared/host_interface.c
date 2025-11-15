@@ -3,21 +3,28 @@
 
 #define HIP_TX_SIZE 1024
 #define COMM_CNT    2
-struct
+static struct
 {
     HIP_Cmd_t rxCmd;
     uint16_t rxLen;
     uint32_t numRxBytes;
 } g_decoderCtx[COMM_CNT];
 
-struct
+static struct
 {
     uint8_t txBuffer[HIP_TX_SIZE];
     uint8_t txLen;
     uint32_t numTxBytes;
 } g_coderCtx[COMM_CNT];
 
+HostIface_Callbacks_t g_cbs[COMM_CNT];
+
 /******************************************************************************/
+
+void HostIface_Register(int dev, const HostIface_Callbacks_t* cbs)
+{
+    g_cbs[dev] = *cbs;
+}
 
 int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
 {
@@ -37,12 +44,12 @@ int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
     return 0;
 }
 
-int HostIface_Send(int dev, size_t (*write_fn)(int, const uint8_t*, size_t))
+int HostIface_Send(int dev)
 {
     if (g_coderCtx[dev].txLen > 0)
     {
         int sz = g_coderCtx[dev].txLen;
-        write_fn(dev, g_coderCtx[dev].txBuffer, sz);
+        g_cbs[dev].write_fn(dev, g_coderCtx[dev].txBuffer, sz);
         g_coderCtx[dev].numTxBytes += sz;
         g_coderCtx[dev].txLen = 0;
     }
@@ -50,7 +57,7 @@ int HostIface_Send(int dev, size_t (*write_fn)(int, const uint8_t*, size_t))
     return 0;
 }
 
-void HostIface_Listen(int dev, size_t (*read_fn)(int, uint8_t*, size_t), void (*handler)(const HIP_Cmd_t*))
+void HostIface_Listen(int dev)
 {
     enum
     {
@@ -68,7 +75,7 @@ void HostIface_Listen(int dev, size_t (*read_fn)(int, uint8_t*, size_t), void (*
     while (1)
     {
         uint8_t c;
-        if (read_fn(dev, &c, 1) == 1)
+        if (g_cbs[dev].read_fn(dev, &c, 1) == 1)
         {
             g_decoderCtx[dev].numRxBytes++;
             switch (protoState)
@@ -116,7 +123,7 @@ void HostIface_Listen(int dev, size_t (*read_fn)(int, uint8_t*, size_t), void (*
                 uint16_t crc = *(uint16_t *)&(g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxCmd.header.len]);
                 if (crc == 0xCACB) // TODO: replace with real check
                 {
-                    handler(&g_decoderCtx[dev].rxCmd);
+                    if (g_cbs[dev].handler != 0) g_cbs[dev].handler(&g_decoderCtx[dev].rxCmd);
                 }
 
                 protoState = ProtoState_m;

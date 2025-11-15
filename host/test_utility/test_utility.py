@@ -6,6 +6,7 @@ import time
 import threading
 import sys
 import math
+import socket
 
 from typing import Optional, TYPE_CHECKING
 from circuitpython_typing import WriteableBuffer, ReadableBuffer
@@ -30,6 +31,13 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+
+################################################################################
+# TCP constants
+################################################################################
+
+TCP_HOST = "morbob.local"
+TCP_PORT = 5555
 
 ################################################################################
 
@@ -87,12 +95,17 @@ class MService(Service):
 
 
 ################################################################################
+# BLE port wrapper with read()/write() like serial / TCP
+################################################################################
 
-class BLEPort():
+class BLEPort:
     def __init__(self):
         self.radio = BLERadio()
 
         print("scanning....")
+
+        self.connection = None
+        self.service = None
 
         found = set()
         scan_responses = set()
@@ -121,36 +134,70 @@ class BLEPort():
             print("connected")
             self.service = self.connection[MService]
         else:
-            sys.exit(app.exec_())
+            # original code had something like sys.exit(app.exec_()), keep simple
+            print("BLE connection failed")
+            sys.exit(1)
+
+    # unified API
+    def read(self, nbytes: Optional[int] = None) -> Optional[bytes]:
+        return self.service.read(nbytes)
+
+    def write(self, buf: ReadableBuffer) -> None:
+        self.service.write(buf)
+
+
+################################################################################
+# TCP client port
+################################################################################
+
+class TcpPort:
+    def __init__(self, host: str = TCP_HOST, port: int = TCP_PORT):
+        self.host = host
+        self.port = port
+        print(f"Connecting TCP to {host}:{port} ...")
+        self.sock = socket.create_connection((host, port))
+        # Blocking mode, but we can add timeouts later if needed
+        self.sock.settimeout(None)
+        print("TCP connected")
+
+    def read(self, nbytes: Optional[int] = None) -> Optional[bytes]:
+        if nbytes is None:
+            nbytes = 1
+        try:
+            data = self.sock.recv(nbytes)
+            if not data:
+                # connection closed
+                return b''
+            return data
+        except socket.timeout:
+            return b''
+
+    def write(self, buf: bytes) -> None:
+        # We don't care about return value in the rest of the code
+        self.sock.sendall(buf)
 
 
 ################################################################################
 
 CMD_PING = 0x0001
-LEN_PING = 2
 
 CMD_THROTTLE = 0x0200
-LEN_THROTTLE = 4 * 4 + 1
 
 CMD_EM = 0x0300
-LEN_EM = 2 + 2
 
 CMD_WM = 0x0400
-LEN_WM = 1 + 1
 
 CMD_RP = 0x0500
-LEN_RP = 1
 
 CMD_AZ5 = 0xFFF0
 
 CMD_SET_PID = 0x0600
-LEN_SET_PID = (3 * 3 + 1) * 4
 
 CMD_SET_VELS = 0x0700
-LEN_SET_VELS = 4 + 4 + 1
 
 CMD_SET_POS = 0x0701
-LEN_SET_POS = 4 + 4 + 4 + 1
+
+CMD_TRG_POS = 0x0702
 
 MSG_ACK = 0x0100
 MSG_NAK = 0x0101
@@ -182,6 +229,32 @@ pingRx = -1
 doExit = False
 
 ################################################################################
+# Struct helpers
+################################################################################
+
+def unpack_payload(fmt: str, payload):
+    """Join payload bytes list and unpack with little-endian format."""
+    return struct.unpack('<' + fmt, b''.join(payload))
+
+
+def pack_message(cmd: int, payload_fmt: str = '', *fields: object) -> bytes:
+    """
+    Build full frame: 'm' 'b' + cmd + len + payload + CRC.
+
+    payload_fmt: struct format for payload without '<'
+    fields: values for that payload
+    """
+    if payload_fmt:
+        payload = struct.pack('<' + payload_fmt, *fields)
+    else:
+        payload = b''
+
+    length = len(payload)
+    header = struct.pack('<2sHH', b'mb', cmd, length)
+    tail = struct.pack('<H', CRC)
+    return header + payload + tail
+
+################################################################################
 
 time_window = 100  # Number of points to keep in the plot
 t_data = list(range(-time_window, 0))
@@ -200,6 +273,10 @@ pid_roll, pid_pitch, pid_yaw = [0] * time_window, [0] * time_window, [0] * time_
 
 thrust1, thrust2, thrust3, thrust4 = [0] * time_window, [0] * time_window, [0] * time_window, [0] * time_window
 
+trg_dx = 0.0
+trg_dy = 0.0
+trg_locked = False
+
 ################################################################################
 
 acc_scale = [0] * (3 * 3)
@@ -217,11 +294,15 @@ def throttle_set(val, port):
     throttles = [val, val, val, val]
     flags = 0x0f << 1 | 0x01
 
-    cmd = CMD_THROTTLE
-    len = LEN_THROTTLE
-
-    throttle = struct.pack('<2sHHB4fH', b'mb', cmd, len, flags, throttles[0], \
-            throttles[1], throttles[2],  throttles[3],  CRC)
+    throttle = pack_message(
+        CMD_THROTTLE,
+        'B4f',
+        flags,
+        throttles[0],
+        throttles[1],
+        throttles[2],
+        throttles[3],
+    )
     port.write(throttle)
 
     ackAwait = CMD_THROTTLE
@@ -239,11 +320,15 @@ def throttle_enable(en, port):
     throttles = [0.0, 0.0, 0.0, 0.0]
     flags = en
 
-    cmd = CMD_THROTTLE
-    len = LEN_THROTTLE
-
-    throttle = struct.pack('<2sHHB4fH', b'mb', cmd, len, flags, throttles[0], \
-            throttles[1], throttles[2],  throttles[3],  CRC)
+    throttle = pack_message(
+        CMD_THROTTLE,
+        'B4f',
+        flags,
+        throttles[0],
+        throttles[1],
+        throttles[2],
+        throttles[3],
+    )
     port.write(throttle)
 
     ackAwait = CMD_THROTTLE
@@ -258,14 +343,13 @@ def throttle_enable(en, port):
 
 def handle_ping(payload):
     global pingRx
-    [pingRx, ] = struct.unpack('<H', b''.join(payload))
-    #print("ping", pingRx)
+    (pingRx,) = unpack_payload('H', payload)
+    # print("ping", pingRx)
 
 
 def handle_acknak(ack, payload):
     global ackRx
-    cmd = -1
-    [cmd, ] = struct.unpack('<H', b''.join(payload))
+    (cmd,) = unpack_payload('H', payload)
 
     if ack == 0:
         print(cmd, " NAKed")
@@ -276,8 +360,9 @@ def handle_acc(payload):
     global acr_x, acr_y, acr_z
     global acc_x, acc_y, acc_z
     global acw_x, acw_y, acw_z
+    global acl_x, acl_y, acl_z
 
-    acc_data = struct.unpack('<12f', b''.join(payload))
+    acc_data = unpack_payload('12f', payload)
 
     acr_x.append(acc_data[0])
     acr_y.append(acc_data[1])
@@ -299,15 +384,16 @@ def handle_acc(payload):
 
 def handle_cal_acc(payload):
     global acc_scale, acc_bias
-    cal_data = struct.unpack('<12fB', b''.join(payload))
+    cal_data = unpack_payload('12fB', payload)
 
-    print('[', cal_data[0], cal_data[4], cal_data[8], '] ', \
-        ' [', cal_data[9], cal_data[10], cal_data[11], ']')
+    print('[', cal_data[0], cal_data[4], cal_data[8], '] ',
+          ' [', cal_data[9], cal_data[10], cal_data[11], ']')
 
 def handle_pat(payload):
     global yaw, pitch, roll
     global pos_x, pos_y, pos_z
-    pat_data = struct.unpack('<7f', b''.join(payload))
+
+    pat_data = unpack_payload('7f', payload)
 
     pos_x.append(pat_data[0])
     pos_y.append(pat_data[1])
@@ -317,18 +403,20 @@ def handle_pat(payload):
     pitch.append(pat_data[4])
     yaw.append(pat_data[5])
 
-    time = pat_data[6]
+    time_ = pat_data[6]
 
-    print(time, "(", pos_x[-1], pos_y[-1], pos_z[-1], ")", "(", roll[-1], pitch[-1], yaw[-1], ")")
+    print(time_, "(", pos_x[-1], pos_y[-1], pos_z[-1], ")",
+          "(", roll[-1], pitch[-1], yaw[-1], ")")
 
 def handle_mfx(payload):
-    mfx_data = struct.unpack('<9f', b''.join(payload))
+    mfx_data = unpack_payload('9f', payload)
 
-    print(mfx_data[3], mfx_data[4], mfx_data[5], mfx_data[6], mfx_data[7], mfx_data[8])
+    print(mfx_data[3], mfx_data[4], mfx_data[5],
+          mfx_data[6], mfx_data[7], mfx_data[8])
 
 def handle_mon(payload):
     global fLog
-    mon_data = struct.unpack('<6f', b''.join(payload))
+    mon_data = unpack_payload('6f', payload)
     print(mon_data)
 
     log_str = ' '.join(f'{v:.6f}' for v in mon_data)
@@ -339,8 +427,9 @@ def handle_stb(payload):
     global yaw_rate, pitch_rate, roll_rate
     global pid_roll, pid_pitch, pid_yaw
     global thrust1, thrust2, thrust3, thrust4
+    global fLog
 
-    stb_data = struct.unpack('<13f', b''.join(payload))
+    stb_data = unpack_payload('13f', payload)
 
     roll.append(stb_data[0])
     pitch.append(stb_data[1])
@@ -359,16 +448,14 @@ def handle_stb(payload):
     thrust3.append(stb_data[11])
     thrust4.append(stb_data[12])
 
-    global fLog
     log_str = ' '.join(f'{v:.13f}' for v in stb_data)
     fLog.write("STB: " + log_str + "\n")
-
-    #print(stb_data)
 
 def handle_pvt(payload):
     global pos_x, pos_y, pos_z
     global vel_x, vel_y, vel_z
-    pvt_data = struct.unpack('<7f', b''.join(payload))
+
+    pvt_data = unpack_payload('7f', payload)
 
     pos_x.append(pvt_data[0])
     pos_y.append(pvt_data[1])
@@ -378,12 +465,18 @@ def handle_pvt(payload):
     vel_y.append(pvt_data[4])
     vel_z.append(pvt_data[5])
 
-    time = pvt_data[6]
+    time_ = pvt_data[6]
 
 def handle_wht(payload):
     global yaw
-    wht_data = struct.unpack('<3f', b''.join(payload))
+    wht_data = unpack_payload('3f', payload)
     yaw.append(wht_data[0])
+
+def handle_trg_pos(payload):
+    global trg_dx, trg_dy, trg_locked
+
+    trg_dx, trg_dy, tdx, tdy, flags = unpack_payload('4fB', payload)
+    trg_locked = bool(flags & 0x01)
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -411,10 +504,7 @@ def em_command(msgId, msgPeriod, port):
         print("command not supported")
         return
 
-    cmd = CMD_EM
-    len = LEN_EM
-
-    em = struct.pack('<2sHHHHH', b'mb', cmd, len, msgId, msgPeriod, CRC)
+    em = pack_message(CMD_EM, 'HH', msgId, msgPeriod)
     port.write(em)
 
     ackAwait = CMD_EM
@@ -447,11 +537,8 @@ def wm_command(wm, fc, port):
     elif fc == "gt":
         fsMode = 3
 
-    cmd = CMD_WM
-    len = LEN_WM
-
-    wm = struct.pack('<2sHHBBH', b'mb', cmd, len, imuMode, fsMode, CRC)
-    port.write(wm)
+    wm_frame = pack_message(CMD_WM, 'BB', imuMode, fsMode)
+    port.write(wm_frame)
 
     ackAwait = CMD_WM
 
@@ -465,12 +552,7 @@ def wm_command(wm, fc, port):
 def reset_pos_command(port):
     global ackRx, ackAwait
 
-    cmd = CMD_RP
-    len = LEN_RP
-
-    dummy = 0
-
-    rp = struct.pack('<2sHHBH', b'mb', cmd, len, dummy, CRC)
+    rp = pack_message(CMD_RP, 'B', 0)
     port.write(rp)
 
     ackAwait = CMD_RP
@@ -484,12 +566,7 @@ def reset_pos_command(port):
 
 def az5_command(port):
     global doExit
-    cmd = CMD_AZ5
-    len = LEN_RP
-
-    dummy = 0
-
-    rp = struct.pack('<2sHHBH', b'mb', cmd, len, dummy, CRC)
+    rp = pack_message(CMD_AZ5, 'B', 0)
     port.write(rp)
 
     time.sleep(0.5)
@@ -501,7 +578,6 @@ def set_pid_command(port):
     global ackRx, ackAwait
 
     cmd = CMD_SET_PID
-    len = LEN_SET_PID
 
     koeffs = [0.0] * 10
 
@@ -525,7 +601,7 @@ def set_pid_command(port):
 
     koeffs[9] = mass
 
-    sp = struct.pack('<2sHH10fH', b'mb', cmd, len, *koeffs, CRC)
+    sp = pack_message(cmd, '10f', *koeffs)
     port.write(sp)
 
     ackAwait = CMD_SET_PID
@@ -541,13 +617,12 @@ def set_vels_command(port, v, w, stop):
     global ackRx, ackAwait
 
     cmd = CMD_SET_VELS
-    len = LEN_SET_VELS
 
     flags = 0
-    if (stop):
+    if stop:
         flags = 1
 
-    sp = struct.pack('<2sHHffBH', b'mb', cmd, len, v, w, flags, CRC)
+    sp = pack_message(cmd, 'ffB', v, w, flags)
     port.write(sp)
 
     ackAwait = CMD_SET_VELS
@@ -563,13 +638,12 @@ def set_pos_command(port, x, y, phi, rel):
     global ackRx, ackAwait
 
     cmd = CMD_SET_POS
-    len = LEN_SET_POS
 
     flags = 0
-    if (rel):
+    if rel:
         flags = 1
 
-    sp = struct.pack('<2sHHfffBH', b'mb', cmd, len, x, y, phi, flags, CRC)
+    sp = pack_message(cmd, 'fffB', x, y, phi, flags)
     port.write(sp)
 
     ackAwait = CMD_SET_POS
@@ -588,10 +662,7 @@ def pinger_function(name, port):
     global doExit
     global noPingCount
     while not doExit:
-        cmd = CMD_PING
-        len = LEN_PING
-
-        ping = struct.pack('<2sHHHH', b'mb', cmd, len, pingSeq, CRC)
+        ping = pack_message(CMD_PING, 'H', pingSeq)
         port.write(ping)
 
         time.sleep(0.5)
@@ -749,6 +820,8 @@ def listener_function(name, port):
                     handle_pvt(payload)
                 elif cmd == MSG_WHT:
                     handle_wht(payload)
+                elif cmd == CMD_TRG_POS:
+                    handle_trg_pos(payload)
                 else:
                     print("unknown message: ", cmd)
 
@@ -817,20 +890,61 @@ def visio_track_function(name):
             pts = [world_to_screen(wx, wy, cam_x, cam_y) for (wx, wy) in trace]
             pygame.draw.lines(screen, (255,0,0), False, pts, 2)
 
-    def draw_telemetry(x, y, heading_deg, vx, vy):
+    def draw_telemetry(x, y, heading_deg, vx, vy, tdx, tdy, locked):
         info = [
             f"X: {x:.2f}",
             f"Y: {y:.2f}",
             f"Heading: {heading_deg:.1f}°",
             f"Vx: {vx:.2f}",
             f"Vy: {vy:.2f}",
+            f"Target dx: {tdx:.2f}",
+            f"Target dy: {tdy:.2f}",
         ]
+
+        # Draw normal white text first
         for i, line in enumerate(info):
             screen.blit(font.render(line, True, (0,0,0)), (10, 10 + i*22))
 
+        # --- Target status line ---
+        if locked:
+            txt = "TARGET LOCKED"
+            color = (0, 160, 0)     # dark green
+        else:
+            txt = "TARGET LOST"
+            color = (200, 0, 0)     # red
+
+        screen.blit(
+            font.render(txt, True, color),
+            (10, 10 + len(info) * 22)
+        )
+
+    def draw_target(x, y, heading_rad, cam_x, cam_y):
+        if not trg_locked:
+            return
+
+        # body (dx,dy) -> world
+        dx_b = trg_dx
+        dy_b = trg_dy
+        c = math.cos(heading_rad)
+        s = math.sin(heading_rad)
+
+        tx_w = x + dx_b * c - dy_b * s
+        ty_w = y + dx_b * s + dy_b * c
+
+        sx, sy = world_to_screen(tx_w, ty_w, cam_x, cam_y)
+
+        # color depends on lock
+        color = (0, 200, 0) if trg_locked else (200, 0, 0)
+
+        # Draw a circle and a small cross
+        pygame.draw.circle(screen, color, (sx, sy), 6, 2)
+        pygame.draw.line(screen, color, (sx - 8, sy), (sx + 8, sy), 1)
+        pygame.draw.line(screen, color, (sx, sy - 8), (sx, sy + 8), 1)
+
     trace_points = []
 
-    global doExit, pos_x, pos_y, vel_x, vel_y
+    global doExit, pos_x, pos_y, vel_x, vel_y, yaw
+    global trg_dx, trg_dy, trg_locked
     while not doExit:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -845,18 +959,20 @@ def visio_track_function(name):
 
         # --- heading: CCW-positive, 0° along +X ---
         heading_deg = math.degrees(yaw[-1])
+        heading_rad = yaw[-1]
 
         # --- draw ---
         screen.fill((230,230,230))
         draw_grid(x, y)
         draw_trace(trace_points, x, y)
+        draw_target(x, y, heading_rad, x, y)
 
         # rotate CCW by +heading (pre-rotation already aligned sprite to +X)
         rotated = pygame.transform.rotate(rover_img, heading_deg)
         rect = rotated.get_rect(center=(screen.get_width()//2, screen.get_height()//2))
         screen.blit(rotated, rect.topleft)
 
-        draw_telemetry(x, y, heading_deg, vx, vy)
+        draw_telemetry(x, y, heading_deg, vx, vy, trg_dx, trg_dy, trg_locked)
 
         pygame.display.flip()
         clock.tick(30)
@@ -1123,19 +1239,25 @@ def main():
     global doExit
     fLog = open('log.txt', 'w')
 
-    port = BLEPort()
+    transport = "tcp" #input("transport? [ble/serial/tcp] ").strip().lower()
 
-    mode = input("mode? ")
+    if transport == "serial":
+        port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout=0.12)
+        print("Using SERIAL /dev/ttyUSB0")
+    elif transport == "tcp":
+        port = TcpPort()
+    else:
+        port = BLEPort()
 
-    #port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout = 0.12)
+    mode = input("mode? ").strip()
 
-    pinger = threading.Thread(target=pinger_function, args=("pinger", port.service,))
-    pinger.start()
+    # pinger = threading.Thread(target=pinger_function, args=("pinger", port,))
+    # pinger.start()
 
-    listener = threading.Thread(target=listener_function, args=("listener", port.service,))
+    listener = threading.Thread(target=listener_function, args=("listener", port,))
     listener.start()
 
-    console = threading.Thread(target=console_function, args=("console", port.service,))
+    console = threading.Thread(target=console_function, args=("console", port,))
     console.start()
 
     if mode == "track":

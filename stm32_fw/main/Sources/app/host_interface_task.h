@@ -8,7 +8,7 @@ extern "C"
 {
 #endif
 
-int HostIface_Start();
+int HostIface_Start(int dev);
 
 #ifdef __cplusplus
 }

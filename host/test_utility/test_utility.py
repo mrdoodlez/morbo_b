@@ -476,10 +476,7 @@ def handle_trg_pos(payload):
     global trg_dx, trg_dy, trg_locked
 
     trg_dx, trg_dy, tdx, tdy, flags = unpack_payload('4fB', payload)
-
     trg_locked = bool(flags & 0x01)
-    print(f"TRG_POS: dx={trg_dx:.3f} dy={trg_dy:.3f}  "
-          f"locked={trg_locked}")
 
 def em_command(msgId, msgPeriod, port):
     global ackRx, ackAwait
@@ -893,16 +890,33 @@ def visio_track_function(name):
             pts = [world_to_screen(wx, wy, cam_x, cam_y) for (wx, wy) in trace]
             pygame.draw.lines(screen, (255,0,0), False, pts, 2)
 
-    def draw_telemetry(x, y, heading_deg, vx, vy):
+    def draw_telemetry(x, y, heading_deg, vx, vy, tdx, tdy, locked):
         info = [
             f"X: {x:.2f}",
             f"Y: {y:.2f}",
             f"Heading: {heading_deg:.1f}°",
             f"Vx: {vx:.2f}",
             f"Vy: {vy:.2f}",
+            f"Target dx: {tdx:.2f}",
+            f"Target dy: {tdy:.2f}",
         ]
+
+        # Draw normal white text first
         for i, line in enumerate(info):
             screen.blit(font.render(line, True, (0,0,0)), (10, 10 + i*22))
+
+        # --- Target status line ---
+        if locked:
+            txt = "TARGET LOCKED"
+            color = (0, 160, 0)     # dark green
+        else:
+            txt = "TARGET LOST"
+            color = (200, 0, 0)     # red
+
+        screen.blit(
+            font.render(txt, True, color),
+            (10, 10 + len(info) * 22)
+        )
 
     def draw_target(x, y, heading_rad, cam_x, cam_y):
         if not trg_locked:
@@ -958,7 +972,7 @@ def visio_track_function(name):
         rect = rotated.get_rect(center=(screen.get_width()//2, screen.get_height()//2))
         screen.blit(rotated, rect.topleft)
 
-        draw_telemetry(x, y, heading_deg, vx, vy)
+        draw_telemetry(x, y, heading_deg, vx, vy, trg_dx, trg_dy, trg_locked)
 
         pygame.display.flip()
         clock.tick(30)

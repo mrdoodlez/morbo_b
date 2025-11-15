@@ -117,7 +117,6 @@ static struct
         float tdy;
 
         uint64_t lastTrgPosUs;
-        uint64_t lastCorrUs;
     } trgTrackController;
 
     FS_PID_Koeffs_t kPid;
@@ -528,8 +527,11 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
     return FlightScenario_Result_OK;
 }
 
-#define TRG_TRK_LOST_DT     2.0e6
-#define TRG_TRK_CORR_DT     1.0e6
+#define TRG_TRK_LOST_DT     1.2e6
+#define TRG_TRK_KV          0.6f
+#define TRG_TRK_KW          0.2f
+#define TRG_TRK_EPS_X       0.05f
+#define TRG_TRK_EPS_Y       0.05f
 
 static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *output)
 {
@@ -537,33 +539,38 @@ static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *out
 
     if ((currUs - _copterState.trgTrackController.lastTrgPosUs) > TRG_TRK_LOST_DT)
     {
-        _copterState.iSum.v = 0.0;
-        _copterState.iSum.w = 0.0;
+        _copterState.iSum.v = 0.0f;
+        _copterState.iSum.w = 0.0f;
 
-        output->pwm[FS_Wheel_R] = 0.0;
-        output->pwm[FS_Wheel_L] = 0.0;
+        _copterState.velController.cmd.v = 0.0f;
+        _copterState.velController.cmd.w = 0.0f;
+
+        output->pwm[FS_Wheel_R] = 0.0f;
+        output->pwm[FS_Wheel_L] = 0.0f;
 
         return FlightScenario_Result_OK;
     }
 
-    if ((currUs - _copterState.trgTrackController.lastCorrUs) > TRG_TRK_CORR_DT)
-    {
-        float c = cosf(_copterState.measBuff[_copterState.epochIdx].r[2]);
-        float s = sinf(_copterState.measBuff[_copterState.epochIdx].r[2]);
+    float ex = _copterState.trgTrackController.dx  - _copterState.trgTrackController.tdx;
+    float ey = _copterState.trgTrackController.dy  - _copterState.trgTrackController.tdy;
 
-        float ex = _copterState.trgTrackController.dx - _copterState.trgTrackController.tdx;
-        float ey = _copterState.trgTrackController.dy - _copterState.trgTrackController.tdy;
+    if (fabsf(ex) < TRG_TRK_EPS_X) ex = 0.0f;
+    if (fabsf(ey) < TRG_TRK_EPS_Y) ey = 0.0f;
 
-        _copterState.posController.cmd.x
-                = _copterState.measBuff[_copterState.epochIdx].p[0] + c * ex - s * ey;
-        _copterState.posController.cmd.y
-                = _copterState.measBuff[_copterState.epochIdx].p[1] + s * ex + c * ey;
+    // -------- P control: position error -> v, w --------
+    // X forward: ex>0  -> move forward
+    // Y left:    ey>0  -> rotate CCW (positive w) so target moves toward center
+    float v_cmd = TRG_TRK_KV * ex;
+    float w_cmd = TRG_TRK_KW * ey;
 
-        _copterState.posController.cmd.phiSet = 0;
-        _copterState.posController.newInput = 1;
+    if (v_cmd >  V_MAX) v_cmd =  V_MAX;
+    if (v_cmd < -V_MAX) v_cmd = -V_MAX;
 
-        _copterState.trgTrackController.lastCorrUs = currUs;
-    }
+    if (w_cmd >  W_MAX) w_cmd =  W_MAX;
+    if (w_cmd < -W_MAX) w_cmd = -W_MAX;
 
-    return FlightScenarioFunc_GoTo(output);
+    _copterState.velController.cmd.v = v_cmd;
+    _copterState.velController.cmd.w = w_cmd;
+
+    return FlightScenarioFunc_VelSet(output);
 }

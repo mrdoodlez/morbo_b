@@ -13,6 +13,7 @@
 // #include "monitor.h"
 #include "timer_ext.h"
 #include "system.h"
+#include "serial.h"
 
 #include <math.h>
 
@@ -75,6 +76,8 @@ struct
 } g_controllerState;
 
 /******************************************************************************/
+
+static void _Controller_NewCommand(const HIP_Cmd_t *cmd);
 
 static void _Controller_ProcessNewMeas(const FS_Meas_t *meas);
 static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd);
@@ -204,7 +207,15 @@ void Controller_Task()
         Controller_HandleFatal();
     }
 
-    rc = HostIface_Start();
+    HostIface_Callbacks_t cbs = {
+        .read_fn = Serial_Read,
+        .write_fn = Serial_Write,
+        .handler = _Controller_NewCommand,
+    };
+
+    HostIface_Register(HIP_SERIAL, &cbs);
+
+    rc = HostIface_Start(HIP_SERIAL);
     if (rc)
     {
         Controller_HandleFatal();
@@ -323,15 +334,6 @@ void _Sender_Task()
 
 /******************************************************************************/
 
-void Controller_NewCommand(const HIP_Cmd_t *cmd)
-{
-    ControllerMessage_t msg;
-    msg.type = ControllerMessageType_Cmd;
-    msg.msgContent.cmd = *cmd;
-
-    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
-}
-
 void Controller_HandleFatal()
 {
     g_controllerState.mState = MachineState_HardFault;
@@ -340,6 +342,15 @@ void Controller_HandleFatal()
 }
 
 /******************************************************************************/
+
+static void _Controller_NewCommand(const HIP_Cmd_t *cmd)
+{
+    ControllerMessage_t msg;
+    msg.type = ControllerMessageType_Cmd;
+    msg.msgContent.cmd = *cmd;
+
+    xQueueSend(g_controllerState.hQueue, (void *)&msg, (TickType_t)0);
+}
 
 static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
 {
@@ -387,7 +398,7 @@ static void _Controller_HandlePing(const HIP_Ping_t *cmd)
         g_controllerState.mState = MachineState_Armed;
 
     uint16_t rxSeq = cmd->payload.seqNumber;
-    HostIface_PutData(HIP_MSG_PING, (uint8_t *)&rxSeq, sizeof(rxSeq));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_PING, (uint8_t *)&rxSeq, sizeof(rxSeq));
 
     g_controllerState.lastPing = xTaskGetTickCount();
 }
@@ -416,7 +427,7 @@ static void _Controller_HandleThrottle(const HIP_Throttle_t *cmd)
     }
 
     uint16_t cmdA = HIP_MSG_THROTTLE;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 
     _dbg = 2001;
 }
@@ -430,7 +441,7 @@ static void _Controller_HandleEM(const HIP_EM_t *cmd)
     }
 
     uint16_t cmdA = HIP_MSG_EM;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 
     _dbg = 2002;
 }
@@ -441,7 +452,7 @@ static void _Controller_HandleWM(const HIP_WM_t *cmd)
     FlightScenario_SetScenario(cmd->payload.fcMode);
 
     uint16_t cmdA = HIP_MSG_WM;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 
     _dbg = 2003;
 }
@@ -456,7 +467,7 @@ static void _Controller_HandleSetPid(const HIP_SetPID_t *cmd)
     */
 
     uint16_t cmdA = HIP_MSG_SET_PID;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
 static void _Controller_HandleSetVels(const HIP_SetVels_t *cmd)
@@ -464,7 +475,7 @@ static void _Controller_HandleSetVels(const HIP_SetVels_t *cmd)
     FlightScenario_SetInputs(FlightScenario_Input_VelCmd, (void*)&(cmd->payload));
 
     uint16_t cmdA = HIP_MSG_SET_VELS;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
 static void _Controller_HandleSetPos(const HIP_SetPos_t *cmd)
@@ -472,7 +483,7 @@ static void _Controller_HandleSetPos(const HIP_SetPos_t *cmd)
     FlightScenario_SetInputs(FlightScenario_Input_PosCmd, (void*)&(cmd->payload));
 
     uint16_t cmdA = HIP_MSG_SET_POS;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
 static void _Controller_HandleTrgPos(const HIP_TrgPos_t *cmd)
@@ -487,7 +498,7 @@ static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd)
     FlightScenario_ResetPos();
 
     uint16_t cmdA = HIP_MSG_RESET_POS;
-    HostIface_PutData(HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 
     _dbg = 2004;
 }
@@ -511,7 +522,7 @@ void _Controller_SendMessages()
         }
     }
 
-    HostIface_Send();
+    HostIface_Send(HIP_SERIAL);
 }
 
 void _Controller_SendAcc()
@@ -566,7 +577,7 @@ void _Controller_SendPAT()
     memcpy(ppat.rotation, s->r, sizeof(ppat.rotation));
     ppat.time = s->time;
 
-    HostIface_PutData(HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_PAT, (uint8_t *)&ppat, sizeof(ppat));
 }
 
 void _Controller_SendPVT()
@@ -578,7 +589,7 @@ void _Controller_SendPVT()
     memcpy(pvt.velocity, s->v, sizeof(pvt.velocity));
     pvt.time = s->time;
 
-    HostIface_PutData(HIP_MSG_PVT, (uint8_t *)&pvt, sizeof(pvt));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_PVT, (uint8_t *)&pvt, sizeof(pvt));
 }
 
 void _Controller_SendWHT()
@@ -590,7 +601,7 @@ void _Controller_SendWHT()
     wht.heading = s->r[2];
     wht.time = s->time;
 
-    HostIface_PutData(HIP_MSG_WHT, (uint8_t *)&wht, sizeof(wht));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_WHT, (uint8_t *)&wht, sizeof(wht));
 }
 
 void _Controller_SendMFX()
@@ -632,7 +643,7 @@ void _Controller_SendMon()
     mon.vbat = g_controllerState.vbat;
     mon.ch1 = g_controllerState.ch1;
 
-    HostIface_PutData(HIP_MSG_MON, (uint8_t *)&mon, sizeof(mon));
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_MON, (uint8_t *)&mon, sizeof(mon));
 }
 
 /******************************************************************************/

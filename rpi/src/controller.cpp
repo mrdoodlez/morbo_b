@@ -158,7 +158,7 @@ int Controller_Start(const ControllerParams &params)
 {
     Controller_LoadParams(); // TODO: move this to main()
 
-    g_state.setTarget(0.5, 0.0); // <- read from params;
+    g_state.setTarget(1.0, 0.0); // <- read from params;
 
     int rc = Serial_Init(commMcu, params.mcuDev.c_str());
     if (rc)
@@ -306,6 +306,7 @@ int Controller_PostMessage(const ControllerMsg &m)
 
 static void _SendTrgPos(bool valid, float dx_m, float dy_m)
 {
+    //dy_m = 0.0; // TODO: remove it!
     HIP_Payload_TrgPos_t tp;
 
     tp.flags = valid ? HIP_TrgPos_Flags_TrgLocked : 0;

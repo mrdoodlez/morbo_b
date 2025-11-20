@@ -10,7 +10,7 @@ The original idea was to have something that could carry a huge bag full of beer
 - Follows an ArUco tag in the camera view using a very simple proportional controller.
 - Keeps its orientation stable using an IMU processed with MotionFX on an STM32.
 - Streams live video from the onboard camera.
-- Sends back basic telemetry (angles, speeds, PWM, battery, ADC values).
+- Sends back basic telemetry (angles, speeds, PWM, battery ADC values).
 
 ## How it’s put together
 
@@ -18,16 +18,16 @@ The original idea was to have something that could carry a huge bag full of beer
 
 All OpenCV runs on the Raspberry Pi:
 
-- Camera → OpenCV → ArUco detection  
-- Computes small dx/dy/heading errors  
-- Runs a tiny P-controller and sends movement cues to the STM32  
+- Camera → OpenCV → ArUco detection
+- Computes tag position in rover frame and sends it to STM32
 - Streams video through ffmpeg (low-latency RTMP)
 
 ### STM32 — “small realtime brain”
 
-- Runs MotionFX for IMU orientation  
-- Drives motors through a custom PWM setup  
-- Uses a small driver for external pulse counters  
+- Runs MotionFX for IMU orientation
+- Runs a tiny P-controller computing velocities
+- Drives motors through a custom PWM setup
+- Uses a small driver for external pulse counters (optical encoders)
 - Handles incoming commands from the Raspberry Pi and sends telemetry back
 
 ## Mechanics (all hand-built)

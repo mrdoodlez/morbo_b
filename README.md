@@ -1,68 +1,51 @@
-# Morbo-B
-### Autonomous Tag-Following Rover
+# MorBo-B Beer Buddy Rover Project
 
----
+This is a small, home-built rover prototype I’m working on for fun and experimentation.  
+Nothing fancy — just a simple setup where everything is kept as straightforward as possible.
 
-## Overview
+The original idea was to have something that could carry a huge bag full of beer for me to the beach.
 
-**Morbo-B** is an experimental rover platform designed to follow a visual tag in real time.
-The system combines low-level motion control on **STM32 + FreeRTOS** with a host-side vision and navigation stack (currently running on PC, later migrating to **Raspberry Pi**).
+## What the rover can do (so far)
 
----
+- Follows an ArUco tag in the camera view using a very simple proportional controller.
+- Keeps its orientation stable using an IMU processed with MotionFX on an STM32.
+- Streams live video from the onboard camera.
+- Sends back basic telemetry (angles, speeds, PWM, battery, ADC values).
 
-## System Architecture
+## How it’s put together
 
-### Onboard (STM32 + FreeRTOS)
-- PWM motor control for differential drive wheels
-- Wheel encoders for odometry
-- 6DoF IMU with **ST MotionFX** sensor fusion
-- Command interpreter capable of:
-  - Relative moves (`dx`, `dy`)
-  - Absolute positioning within the odom frame
+### Raspberry Pi — “lightweight perception”
 
-### Host Side (PC / Raspberry Pi)
-- **Python communication utility**
-  - Sends motion commands via Bluetooth or serial link
-  - Visualizes rover pose and trajectory in real time
-- **OpenCV-based vision module**
-  - Detects and tracks a red circular tag in the camera frame
-  - Estimates tag position and orientation relative to the rover
+All OpenCV runs on the Raspberry Pi:
 
----
+- Camera → OpenCV → ArUco detection  
+- Computes small dx/dy/heading errors  
+- Runs a tiny P-controller and sends movement cues to the STM32  
+- Streams video through ffmpeg (low-latency RTMP)
 
-## Current Capabilities
-- Low-level motion control
-- IMU fusion and odometry
-- Tag detection via camera
-- Command and visualization tools
+### STM32 — “small realtime brain”
 
----
+- Runs MotionFX for IMU orientation  
+- Drives motors through a custom PWM setup  
+- Uses a small driver for external pulse counters  
+- Handles incoming commands from the Raspberry Pi and sends telemetry back
 
-## Work in Progress
-- Integrate visual tracking output into motion commands
-  - Convert tag position in camera frame → rover movement in odom frame
-- Migrate host functionality to Raspberry Pi for onboard autonomy
-- Improve latency and robustness of video streaming and processing
+## Mechanics (all hand-built)
 
----
+I built all the mechanical parts myself — nothing off-the-shelf except motors and bearings.
 
-## Technologies
-- **Embedded:** STM32, FreeRTOS, C/C++, ST MotionFX
-- **Host:** Python, OpenCV, Matplotlib
-- **Communication:** Bluetooth / Serial link
+There are two physical versions of the rover:
 
----
+1. A small indoor debugging rover for algorithm testing.
+2. A larger, high-torque rover with custom 3D-printed gearboxes and stronger drive modules.
 
-## Next Steps
-1. Implement closed-loop tag-following logic
-2. Migrate host logic to Raspberry Pi
-3. Add waypoint and trajectory tracking
+## Host side
 
----
+On the PC there is a lightweight viewer that:
+
+- Plots position, orientation and motor commands  
+- Shows the incoming video stream  
+- Visualises telemetry in real time
 
 ## Demo
-*Coming soon — real-time video of the rover following a colored tag.*
-
----
-
-**Morbo-B** — experimental platform for vision-guided mobile robotics.
+https://www.linkedin.com/posts/stanislav-raskov-8b927817_robotics-embedded-opencv-activity-7396827851494297600-C0tn?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAANrug0B6drm2dej2f2d9ZgyykN8vfbWWls

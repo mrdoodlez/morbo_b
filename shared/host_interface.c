@@ -2,7 +2,7 @@
 #include "host_interface_cmds.h"
 
 #define HIP_TX_SIZE 1024
-#define COMM_CNT    2
+#define COMM_CNT 2
 static struct
 {
     HIP_Cmd_t rxCmd;
@@ -19,9 +19,11 @@ static struct
 
 HostIface_Callbacks_t g_cbs[COMM_CNT];
 
+static uint16_t HostIface_CRC(const uint8_t *data, size_t len);
+
 /******************************************************************************/
 
-void HostIface_Register(int dev, const HostIface_Callbacks_t* cbs)
+void HostIface_Register(int dev, const HostIface_Callbacks_t *cbs)
 {
     g_cbs[dev] = *cbs;
 }
@@ -34,12 +36,18 @@ int HostIface_PutData(int dev, uint16_t id, const uint8_t *buff, uint16_t len)
     txCmd->header.b = 'b';
     txCmd->header.cmd = id;
     txCmd->header.len = len;
+
     for (int i = 0; i < len; i++)
         txCmd->payload[i] = buff[i];
 
-    *(uint16_t *)&(txCmd->payload[len]) = 0xCACB; // replace with real CRC
+    uint16_t crc = HostIface_CRC(
+        (const uint8_t *)&txCmd->header,
+        sizeof(HIP_Header_t) + len);
 
-    g_coderCtx[dev].txLen += (sizeof(HIP_Header_t) + len + 2 /*CRC*/);
+    txCmd->payload[len + 0] = (uint8_t)(crc & 0xFF);
+    txCmd->payload[len + 1] = (uint8_t)(crc >> 8);
+
+    g_coderCtx[dev].txLen += sizeof(HIP_Header_t) + len + 2;
 
     return 0;
 }
@@ -119,13 +127,20 @@ void HostIface_Listen(int dev)
                 break;
             case ProtoState_crc1:
                 g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxLen++] = c;
-
-                uint16_t crc = *(uint16_t *)&(g_decoderCtx[dev].rxCmd.payload[g_decoderCtx[dev].rxCmd.header.len]);
-                if (crc == 0xCACB) // TODO: replace with real check
                 {
-                    if (g_cbs[dev].handler != 0) g_cbs[dev].handler(&g_decoderCtx[dev].rxCmd);
-                }
+                    HIP_Cmd_t *cmd = &g_decoderCtx[dev].rxCmd;
+                    uint16_t len = cmd->header.len;
 
+                    uint16_t recvCrc = *(uint16_t *)&cmd->payload[len];
+                    uint16_t calcCrc = HostIface_CRC((const uint8_t *)&cmd->header,
+                                                     sizeof(HIP_Header_t) + len);
+
+                    if (recvCrc == calcCrc)
+                    {
+                        if (g_cbs[dev].handler != 0)
+                            g_cbs[dev].handler(&g_decoderCtx[dev].rxCmd);
+                    }
+                }
                 protoState = ProtoState_m;
                 break;
             case ProtoState_m:
@@ -142,4 +157,23 @@ void HostIface_Listen(int dev)
             }
         }
     }
+}
+
+static uint16_t HostIface_CRC(const uint8_t *data, size_t len)
+{
+    uint16_t crc = 0xFFFF; // initial value
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        crc ^= (uint16_t)data[i] << 8;
+        for (int b = 0; b < 8; ++b)
+        {
+            if (crc & 0x8000)
+                crc = (crc << 1) ^ 0x1021;
+            else
+                crc = (crc << 1);
+        }
+    }
+
+    return crc;
 }

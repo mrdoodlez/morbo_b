@@ -2,10 +2,13 @@
 
 #include <cstdint>
 #include <opencv2/core.hpp>
+#include <string>
 
 enum ParamPage
 {
     ParamPage_Vodom,
+    ParamPage_System,
+    ParamPage_Mcu,
 };
 
 struct ParamsView
@@ -16,7 +19,7 @@ struct ParamsView
 };
 
 
-int Controller_LoadParams();
+int Controller_LoadParams(const std::string &config_path);
 
 int Controller_GetParams(ParamPage page, ParamsView *out_view);
 
@@ -44,4 +47,21 @@ struct VodomParams
 
     // ROI
     float roi_expand = 2.0f;
+
+    // Device
+    std::string camera_dev = "/dev/video0";
+};
+
+struct SystemParams
+{
+    std::string mcu_dev = "/dev/ttyUSB0";
+    std::string host_dev = "/dev/ttyUSB1";
+};
+
+struct McuParams
+{
+    // Dummy PID coeffs for now
+    double angle_kp = 1.0, angle_ki = 0.1, angle_kd = 0.01;
+    double rate_kp  = 0.8, rate_ki  = 0.05, rate_kd  = 0.005;
+    double pos_kp   = 0.5, pos_ki   = 0.0,  pos_kd   = 0.0;
 };

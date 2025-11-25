@@ -5,12 +5,6 @@
 #include <cstring>
 #include <string>
 
-struct ControllerParams
-{
-    std::string mcuDev;
-    std::string videoDev;
-};
-
 struct ControllerMsgPayload
 {
     union
@@ -37,7 +31,7 @@ struct ControllerMsg
     ControllerMsgPayload payload;
 };
 
-int Controller_Start(const ControllerParams &params);
+int Controller_Start();
 
 int Controller_PostMessage(const ControllerMsg &m);
 

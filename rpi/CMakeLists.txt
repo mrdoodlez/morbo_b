@@ -16,6 +16,11 @@ set(CMAKE_C_FLAGS   "-O0 -g3 -ggdb3 -fno-omit-frame-pointer -Wall -Wextra")
 find_package(OpenCV REQUIRED core imgproc videoio highgui calib3d aruco)
 
 # -----------------------------
+# Find JSON
+# -----------------------------
+find_package(nlohmann_json REQUIRED)
+
+# -----------------------------
 # Source files
 # -----------------------------
 add_executable(vpos
@@ -45,6 +50,7 @@ target_include_directories(vpos PRIVATE
 target_link_libraries(vpos
     ${OpenCV_LIBS}
     atomic
+    nlohmann_json::nlohmann_json
 )
 
 message(STATUS "OpenCV includes: ${OpenCV_INCLUDE_DIRS}")

@@ -20,4 +20,4 @@ struct VodomMsg
     float quality;     // 0..1
 };
 
-int Vodom_Start(const std::string &videoDev);
+int Vodom_Start();

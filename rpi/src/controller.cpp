@@ -154,13 +154,16 @@ uint64_t Controller_NowMs()
         .count();
 }
 
-int Controller_Start(const ControllerParams &params)
+int Controller_Start()
 {
-    Controller_LoadParams(); // TODO: move this to main()
-
     g_state.setTarget(1.0, 0.0); // <- read from params;
 
-    int rc = Serial_Init(commMcu, params.mcuDev.c_str());
+    ParamsView v{};
+    Controller_GetParams(ParamPage_System, &v);
+
+    auto *sp = static_cast<const SystemParams *>(v.ptr);
+
+    int rc = Serial_Init(commMcu, sp->mcu_dev.c_str());
     if (rc)
     {
         vlog.text << "serial open error: " << rc << std::endl;
@@ -183,7 +186,7 @@ int Controller_Start(const ControllerParams &params)
         return -30;
     }
 
-    rc = Vodom_Start(params.videoDev /* this should be not arg as well */);
+    rc = Vodom_Start();
     if (rc)
     {
         vlog.text << "Visual odometry start failed, rc: " << rc << std::endl;

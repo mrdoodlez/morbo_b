@@ -28,9 +28,8 @@ struct VodomInternals
 };
 
 static VodomInternals g_vOdomInternals;
-static VodomParams g_params;
 
-static void _Vodom_Worker(VodomInternals &s, const VodomParams &P);
+static void _Vodom_Worker(VodomInternals &s, VodomParams P);
 
 static inline uint64_t nowMonotonicUS()
 {
@@ -41,15 +40,14 @@ static inline uint64_t nowMonotonicUS()
 /*******************************************************************************/
 
 static bool Vodom_OpenCamera(cv::VideoCapture &cap,
-                             const std::string &dev,
                              const VodomParams &p)
 {
     // Prefer V4L2 backend (Linux)
 #ifdef CV_CAP_V4L2
-    if (!cap.open(dev, cv::CAP_V4L2))
+    if (!cap.open(p.camera_dev, cv::CAP_V4L2))
         return false;
 #else
-    if (!cap.open(dev))
+    if (!cap.open(p.camera_dev))
         return false;
 #endif
 
@@ -92,7 +90,7 @@ static void Vodom_PrepareUndistortMaps(VodomInternals &S, const VodomParams &P)
 
 /*******************************************************************************/
 
-int Vodom_Start(const std::string &videoDev)
+int Vodom_Start()
 {
     ParamsView v{};
     if (Controller_GetParams(ParamPage_Vodom, &v) != 0 || v.size != sizeof(VodomParams))
@@ -101,20 +99,19 @@ int Vodom_Start(const std::string &videoDev)
         return -10;
     }
 
-    auto *vp = static_cast<const VodomParams *>(v.ptr);
-    g_params = *vp;
+    VodomParams vp = *reinterpret_cast<const VodomParams*>(v.ptr);
 
-    if (!Vodom_OpenCamera(g_vOdomInternals.cap, videoDev, g_params))
+    if (!Vodom_OpenCamera(g_vOdomInternals.cap, vp))
     {
-        vlog.text << "Failed to open camera: " << videoDev << std::endl;
+        vlog.text << "Failed to open camera: " << vp.camera_dev << std::endl;
         return -20;
     }
 
     // Prepare undistort
-    Vodom_PrepareUndistortMaps(g_vOdomInternals, g_params);
+    Vodom_PrepareUndistortMaps(g_vOdomInternals, vp);
 
-    std::thread([&]
-                { _Vodom_Worker(g_vOdomInternals, g_params); })
+    std::thread([vp]
+                { _Vodom_Worker(g_vOdomInternals, vp); })
         .detach();
 
     return 0;
@@ -122,7 +119,7 @@ int Vodom_Start(const std::string &videoDev)
 
 /*******************************************************************************/
 
-static void _Vodom_Worker(VodomInternals &s, const VodomParams &P)
+static void _Vodom_Worker(VodomInternals &s, VodomParams P)
 {
     int consecutiveHits = 0;
     uint32_t nFrame = 0;

@@ -90,7 +90,10 @@ void HostIface_Listen(int dev)
             {
             case ProtoState_b:
                 if (c == HIP_SYMBOL_B)
+                {
+                    g_decoderCtx[dev].rxCmd.header.b = c;
                     protoState = ProtoState_cmd0;
+                }
                 else
                     protoState = ProtoState_m;
                 break;
@@ -147,6 +150,7 @@ void HostIface_Listen(int dev)
             default:
                 if (c == HIP_SYMBOL_M)
                 {
+                    g_decoderCtx[dev].rxCmd.header.m = c;
                     g_decoderCtx[dev].rxCmd.header.len = 0;
                     g_decoderCtx[dev].rxCmd.header.cmd = 0;
                     g_decoderCtx[dev].rxLen = 0;

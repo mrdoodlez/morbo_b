@@ -1,4 +1,5 @@
 #include "serial.h"
+#include "logger.h"
 
 #include <cerrno>
 #include <cstdint>
@@ -57,7 +58,10 @@ int Serial_Init(int dev, const char* const path)
 
     ports[dev].fd = ::open(path, O_RDWR | O_NOCTTY);
     if (ports[dev].fd < 0)
+    {
+        vlog.text << "open(" << path << ") failed: " << std::strerror(errno) << "\n";
         return -20;
+    }
 
     // Ensure blocking mode
     int flags = fcntl(ports[dev].fd, F_GETFL, 0);

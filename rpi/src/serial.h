@@ -8,7 +8,7 @@ extern "C"
 {
 #endif
 
-int Serial_Init(int dev, const char* const path);
+int Serial_Init(int dev, const char* const path, int baud);
 
 size_t Serial_Read(int dev, uint8_t* buff, size_t count);
 

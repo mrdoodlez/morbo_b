@@ -77,8 +77,8 @@ void Comm_Start(int mcu, int hst)
 
     HostIface_Callbacks_t hstCbs =
     {
-        .read_fn = P2pLink_Read,
-        .write_fn = P2pLink_Write,
+        .read_fn = Serial_Read, //P2pLink_Read,
+        .write_fn = Serial_Write, //P2pLink_Write,
         .handler = 0,
     };
 

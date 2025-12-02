@@ -21,7 +21,14 @@ struct Serial
 
 static std::map<int, Serial> ports;
 
-static bool configure_port_115200_8N1(int fd)
+static inline speed_t baud2baud(int baud)
+{
+    if (baud == 9600) return B9600;
+    if (baud == 115200) return B115200;
+    return 0;
+}
+
+static bool configure_port_BAUD_8N1(int fd, int baud)
 {
     termios tio{};
     if (tcgetattr(fd, &tio) != 0)
@@ -30,7 +37,7 @@ static bool configure_port_115200_8N1(int fd)
     cfmakeraw(&tio);
 
     // 115200 baud
-    if (cfsetispeed(&tio, B115200) != 0)
+    if (cfsetispeed(&tio, baud2baud(baud)) != 0)
         return false;
 
     // 8N1, no flow control
@@ -51,7 +58,7 @@ static bool configure_port_115200_8N1(int fd)
     return true;
 }
 
-int Serial_Init(int dev, const char* const path)
+int Serial_Init(int dev, const char* const path, int baud)
 {
     if (!path)
         return -10;
@@ -68,7 +75,7 @@ int Serial_Init(int dev, const char* const path)
     if (flags >= 0)
         fcntl(ports[dev].fd, F_SETFL, flags & ~O_NONBLOCK);
 
-    if (!configure_port_115200_8N1(ports[dev].fd))
+    if (!configure_port_BAUD_8N1(ports[dev].fd, baud))
     {
         ::close(ports[dev].fd);
         return -30;

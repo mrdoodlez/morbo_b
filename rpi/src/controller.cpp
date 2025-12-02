@@ -163,19 +163,28 @@ int Controller_Start()
 
     auto *sp = static_cast<const SystemParams *>(v.ptr);
 
-    int rc = Serial_Init(commMcu, sp->mcu_dev.c_str());
+    int rc = Serial_Init(commMcu, sp->mcu_dev.c_str(), 115200);
     if (rc)
     {
-        vlog.text << "serial open error: " << rc << std::endl;
+        vlog.text << "serial " << commMcu << " open error: " << rc << std::endl;
         return -10;
     }
 
+    rc = Serial_Init(commHost, sp->host_dev.c_str(), 9600);
+    if (rc)
+    {
+        vlog.text << "serial " << commHost << " open error: " << rc << std::endl;
+        return -20;
+    }
+
+    /*
     rc = P2pLink_Init(5555);
     if (rc)
     {
         vlog.text << "TCT server start failed, rc: " << rc << std::endl;
         return -20;
     }
+    */
 
     Comm_Start(commMcu, commHost);
 

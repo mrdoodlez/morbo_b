@@ -529,7 +529,7 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
 
 #define TRG_TRK_LOST_DT     1.2e6
 #define TRG_TRK_KV          0.6f
-#define TRG_TRK_KW          0.2f
+#define TRG_TRK_KW          0.4f
 #define TRG_TRK_EPS_X       0.05f
 #define TRG_TRK_EPS_Y       0.05f
 

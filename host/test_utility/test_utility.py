@@ -735,22 +735,34 @@ def console_function(name, port):
             elif command[0] == 'q':
                 doExit = True
 
-def listener_function(name, port):
-    ProtoState_m = 0
-    ProtoState_b = 1
-    ProtoState_len0 = 2
-    ProtoState_len1 = 3
-    ProtoState_cmd0 = 4
-    ProtoState_cmd1 = 5
-    ProtoState_payload = 6
-    ProtoState_crc0 = 7
-    ProtoState_crc1 = 8
+def crc16_ccitt(data: bytes, init: int = 0xFFFF) -> int:
+    crc = init
+    for b in data:
+        crc ^= (b << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc
 
-    state = ProtoState_m
-    cmd = -1
-    pllen = 0
+
+def listener_function(name, port):
+    ProtoState_m      = 0
+    ProtoState_b      = 1
+    ProtoState_len0   = 2
+    ProtoState_len1   = 3
+    ProtoState_cmd0   = 4
+    ProtoState_cmd1   = 5
+    ProtoState_payload = 6
+    ProtoState_crc0   = 7
+    ProtoState_crc1   = 8
+
+    state   = ProtoState_m
+    cmd     = -1
+    pllen   = 0
     payload = []
-    rxCrc = -1
+    rxCrc   = -1
 
     global doExit
 
@@ -797,7 +809,21 @@ def listener_function(name, port):
         elif state == ProtoState_crc1:
             rxCrc = rxCrc + int.from_bytes(c, "little") * 256
 
-            if rxCrc == CRC:
+            header_bytes = bytes([
+                HIP_SYMBOL_M[0],           # 'm'
+                HIP_SYMBOL_B[0],           # 'b'
+                cmd & 0xFF,                # cmd low
+                (cmd >> 8) & 0xFF,         # cmd high
+                pllen & 0xFF,              # len low
+                (pllen >> 8) & 0xFF,       # len high
+            ])
+
+            payload_bytes = b"".join(payload)  # flatten list of single-byte bytes
+
+            calc_crc = crc16_ccitt(header_bytes + payload_bytes)
+
+            if rxCrc == calc_crc:
+                # CRC OK -> dispatch message
                 if cmd == CMD_PING:
                     handle_ping(payload)
                 elif cmd == MSG_ACK:
@@ -824,16 +850,23 @@ def listener_function(name, port):
                     handle_trg_pos(payload)
                 else:
                     print("unknown message: ", cmd)
+            else:
+                print(f"CRC mismatch: rx={rxCrc:04X}, calc={calc_crc:04X}")
 
-            state = ProtoState_m
+            state   = ProtoState_m
+            cmd     = -1
+            pllen   = 0
+            payload = []
+            rxCrc   = -1
 
         elif state == ProtoState_m:
             if c == HIP_SYMBOL_M:
-                cmd = -1
-                pllen = 0
+                cmd     = -1
+                pllen   = 0
                 payload = []
-                rxCrc = -1
-                state = ProtoState_b
+                rxCrc   = -1
+                state   = ProtoState_b
+
 
 ################################################################################
 
@@ -1239,7 +1272,7 @@ def main():
     global doExit
     fLog = open('log.txt', 'w')
 
-    transport = "tcp" #input("transport? [ble/serial/tcp] ").strip().lower()
+    transport = "ble" #"tcp" #input("transport? [ble/serial/tcp] ").strip().lower()
 
     if transport == "serial":
         port = serial.Serial(port="/dev/ttyUSB0", baudrate=115200, timeout=0.12)

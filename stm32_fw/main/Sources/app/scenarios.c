@@ -15,16 +15,47 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *);
 static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *);
 
-static const struct
+struct
 {
-    int encPulses;
-    float wheelD;
-    float wheelBase;
+    uint8_t valid;
+
+    /* Rover geometry */
+    uint16_t enc_pulses; // [pulses / rev]
+    float wheel_d;       // [m]
+    float wheel_base;    // [m]
+
+    /* Averaging window */
+    uint8_t omega_window_sz;
+
+    /* PID (linear velocity) */
+    float pid_v_kp;
+    float pid_v_ki;
+    float pid_v_kd;
+
+    /* PID (angular velocity) */
+    float pid_w_kp;
+    float pid_w_ki;
+    float pid_w_kd;
+
+    /* Limits */
+    float pwm_max; // [0..1]
+
+    /* Path-planning */
+    float path_eps_x;           // [m]
+    float path_eps_phi;         // [rad]
+    uint64_t path_replan_dt_us; // [us]
+    float path_v_max;           // [m/s]
+    float path_w_max;           // [rad/s]
+
+    /* Tag tracking */
+    uint64_t tag_lost_dt_us; // [us]
+    float tag_kv;
+    float tag_kw;
+    float tag_eps_x; // [m]
+    float tag_eps_y; // [m]
 } g_params =
     {
-        .encPulses = 16,
-        .wheelD = 0.075,
-        .wheelBase = 0.27,
+        .valid = 0,
 };
 
 typedef enum
@@ -119,8 +150,6 @@ static struct
         uint64_t lastTrgPosUs;
     } trgTrackController;
 
-    FS_PID_Koeffs_t kPid;
-
     struct
     {
         float v;
@@ -133,17 +162,6 @@ static struct
 void FlightScenario_Init(int algoFreq)
 {
     memset(&_copterState, 0, sizeof(_copterState));
-
-    _copterState.enc[FS_Wheel_L].windowSz = 16;
-    _copterState.enc[FS_Wheel_R].windowSz = 16;
-
-    _copterState.omega.windowSz = 16;
-
-    _copterState.kPid.v.kp = 0.5;
-    _copterState.kPid.v.ki = 0.05;
-
-    _copterState.kPid.w.kp = 0.1;
-    _copterState.kPid.w.ki = 0.01;
 
     _copterState.isStatic = 1;
 
@@ -168,7 +186,8 @@ void FlightScenario_EndEpoch()
 int FlightScenario_SetScenario(FlightScenario_t s)
 {
     uint32_t curr = _copterState.scCounter;
-    uint32_t set = ((_copterState.scenarios[curr].status != FlightScenarioStatus_Running) || ((_copterState.scenarios[curr].desc.flags & FlightScenarioFlags_IsInfinite) != 0))
+    uint32_t set = ((_copterState.scenarios[curr].status != FlightScenarioStatus_Running)
+        || ((_copterState.scenarios[curr].desc.flags & FlightScenarioFlags_IsInfinite) != 0))
                        ? curr
                        : (curr + 1) % NUM_PROGRAMS;
 
@@ -176,6 +195,21 @@ int FlightScenario_SetScenario(FlightScenario_t s)
     _copterState.scenarios[set].desc = _descs[s];
 
     return 0;
+}
+
+static inline float decode_q1k(int16_t q)
+{
+    return (float)q / MCU_Q_SCALE_1K;
+}
+
+static inline float decode_pwm01(uint8_t q)
+{
+    return (float)q / 255.0f;
+}
+
+static inline float mm_to_m(uint16_t mm)
+{
+    return (float)mm / 1000.0f;
 }
 
 int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
@@ -237,19 +271,57 @@ int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data)
 
         _copterState.trgTrackController.lastTrgPosUs = Controller_GetUS();
     }
+    else if (type == FlightScenario_Input_Params)
+    {
+        McuParams_t *src = (McuParams_t *)data;
 
-    return 0;
-}
+        g_params.enc_pulses = src->enc_pulses;
+        g_params.wheel_d = mm_to_m(src->wheel_d_mm);
+        g_params.wheel_base = mm_to_m(src->wheel_base_mm);
 
-int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t *koeffs)
-{
-    _copterState.kPid = *koeffs;
+        g_params.omega_window_sz = src->omega_window_sz;
+
+        g_params.pid_v_kp = decode_q1k(src->pid_v_kp_q);
+        g_params.pid_v_ki = decode_q1k(src->pid_v_ki_q);
+        g_params.pid_v_kd = decode_q1k(src->pid_v_kd_q);
+
+        g_params.pid_w_kp = decode_q1k(src->pid_w_kp_q);
+        g_params.pid_w_ki = decode_q1k(src->pid_w_ki_q);
+        g_params.pid_w_kd = decode_q1k(src->pid_w_kd_q);
+
+        g_params.pwm_max = decode_pwm01(src->pwm_max_q);
+
+        g_params.path_eps_x = decode_q1k(src->path_eps_x_q);
+        g_params.path_eps_phi = decode_q1k(src->path_eps_phi_q);
+        g_params.path_replan_dt_us = src->path_replan_dt_us;
+        g_params.path_v_max = decode_q1k(src->path_v_max_q);
+        g_params.path_w_max = decode_q1k(src->path_w_max_q);
+
+        g_params.tag_lost_dt_us = src->tag_lost_dt_us;
+        g_params.tag_kv = decode_q1k(src->tag_kv_q);
+        g_params.tag_kw = decode_q1k(src->tag_kw_q);
+        g_params.tag_eps_x = decode_q1k(src->tag_eps_x_q);
+        g_params.tag_eps_y = decode_q1k(src->tag_eps_y_q);
+
+        // TODO: probably we need different windows
+
+        _copterState.enc[FS_Wheel_L].windowSz = g_params.omega_window_sz;
+        _copterState.enc[FS_Wheel_R].windowSz = g_params.omega_window_sz;
+        _copterState.omega.windowSz = g_params.omega_window_sz;
+
+        g_params.valid = 1;
+    }
 
     return 0;
 }
 
 FlightScenario_Result_t FlightScenario(ControlOutputs_t *output)
 {
+    if (!g_params.valid)
+    {
+        return FlightScenario_Result_None;
+    }
+
     if (Estimate() == FlightScenario_Result_Error)
     {
         return FlightScenario_Result_Error;
@@ -299,14 +371,16 @@ static FlightScenario_Result_t Estimate()
     {
         if ((_copterState.measBuff[_copterState.prevIdx].flags & FS_StateFlags_MeasValid) == FS_StateFlags_MeasValid)
         {
-            float dL = _copterState.measBuff[_copterState.epochIdx].meas.wheelsPulses.l - _copterState.measBuff[_copterState.prevIdx].meas.wheelsPulses.l;
-            float dR = _copterState.measBuff[_copterState.epochIdx].meas.wheelsPulses.r - _copterState.measBuff[_copterState.prevIdx].meas.wheelsPulses.r;
+            float dL = _copterState.measBuff[_copterState.epochIdx].meas.wheelsPulses.l
+                - _copterState.measBuff[_copterState.prevIdx].meas.wheelsPulses.l;
+            float dR = _copterState.measBuff[_copterState.epochIdx].meas.wheelsPulses.r
+                - _copterState.measBuff[_copterState.prevIdx].meas.wheelsPulses.r;
 
             dL *= _copterState.pwm[FS_Wheel_L] > 0 ? 1.0 : -1.0;
             dR *= _copterState.pwm[FS_Wheel_R] > 0 ? 1.0 : -1.0;
 
-            dL *= 2.0 * M_PI / g_params.encPulses;
-            dR *= 2.0 * M_PI / g_params.encPulses;
+            dL *= 2.0 * M_PI / g_params.enc_pulses;
+            dR *= 2.0 * M_PI / g_params.enc_pulses;
 
             FS_RmaUpdate(&(_copterState.enc[FS_Wheel_L]), dL);
             FS_RmaUpdate(&(_copterState.enc[FS_Wheel_R]), dR);
@@ -314,13 +388,14 @@ static FlightScenario_Result_t Estimate()
             dL = _copterState.enc[FS_Wheel_L].val;
             dR = _copterState.enc[FS_Wheel_R].val;
 
-            float dt = _copterState.measBuff[_copterState.epochIdx].time - _copterState.measBuff[_copterState.prevIdx].time;
+            float dt = _copterState.measBuff[_copterState.epochIdx].time
+                - _copterState.measBuff[_copterState.prevIdx].time;
 
             float wL = dL / dt;
             float wR = dR / dt;
 
-            float vL = wL * g_params.wheelD / 2.0;
-            float vR = wR * g_params.wheelD / 2.0;
+            float vL = wL * g_params.wheel_d / 2.0;
+            float vR = wR * g_params.wheel_d / 2.0;
 
             float vlin = (vL + vR) / 2.0;
 
@@ -382,14 +457,12 @@ static FlightScenario_Result_t FlightScenarioFunc_Debug(ControlOutputs_t *output
     return FlightScenario_Result_OK;
 }
 
-#define PMAX 0.9
-
 static inline float truncate(float x)
 {
-    if (x > PMAX)
-        x = PMAX;
-    else if (x < -PMAX)
-        x = -PMAX;
+    if (x > g_params.pwm_max)
+        x = g_params.pwm_max;
+    else if (x < -g_params.pwm_max)
+        x = -g_params.pwm_max;
     return x;
 }
 
@@ -405,14 +478,16 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *outpu
     }
     else
     {
-        float el = _copterState.velController.cmd.v - _copterState.measBuff[_copterState.epochIdx].vlin;
-        float er = _copterState.velController.cmd.w - _copterState.measBuff[_copterState.epochIdx].w[2];
+        float el = _copterState.velController.cmd.v
+            - _copterState.measBuff[_copterState.epochIdx].vlin;
+        float er = _copterState.velController.cmd.w
+            - _copterState.measBuff[_copterState.epochIdx].w[2];
 
         _copterState.iSum.v += el;
         _copterState.iSum.w += er;
 
-        float ptot = _copterState.kPid.v.kp * el + _copterState.kPid.v.ki * _copterState.iSum.v;
-        float pdif = _copterState.kPid.w.kp * er + _copterState.kPid.w.ki * _copterState.iSum.w;
+        float ptot = g_params.pid_v_kp * el + g_params.pid_v_ki * _copterState.iSum.v;
+        float pdif = g_params.pid_w_kp * er + g_params.pid_w_ki * _copterState.iSum.w;
 
         output->pwm[FS_Wheel_R] = truncate((ptot + pdif) / 2.0);
         output->pwm[FS_Wheel_L] = truncate((ptot - pdif) / 2.0);
@@ -424,12 +499,6 @@ static FlightScenario_Result_t FlightScenarioFunc_VelSet(ControlOutputs_t *outpu
     return FlightScenario_Result_OK;
 }
 
-#define EPS_X 0.2
-#define EPS_PHI 0.087
-#define REPLAN_DT 0.2e6
-#define V_MAX 0.3
-#define W_MAX 1.57
-
 static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
 {
     uint64_t currUs = Controller_GetUS();
@@ -438,14 +507,15 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
 
     float dx = _copterState.posController.cmd.x - _copterState.measBuff[_copterState.epochIdx].p[0];
     float dy = _copterState.posController.cmd.y - _copterState.measBuff[_copterState.epochIdx].p[1];
-    float dphi = _copterState.posController.cmd.phiSet ? (_copterState.posController.cmd.phi - phi0) : 0.0;
+    float dphi = _copterState.posController.cmd.phiSet
+        ? (_copterState.posController.cmd.phi - phi0) : 0.0;
 
     while (dphi > M_PI)
         dphi -= 2.0 * M_PI;
     while (dphi < -M_PI)
         dphi += 2.0 * M_PI;
 
-    if (((fabs(dx) + fabs(dy)) < EPS_X) && (fabs(dphi) < EPS_PHI))
+    if (((fabs(dx) + fabs(dy)) < g_params.path_eps_x) && (fabs(dphi) < g_params.path_eps_phi))
     {
         _copterState.iSum.v = 0.0;
         _copterState.iSum.w = 0.0;
@@ -455,25 +525,27 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
     }
     else
     {
-        if (_copterState.posController.newInput || ((currUs - _copterState.posController.replanUs) > REPLAN_DT))
+        if (_copterState.posController.newInput
+            || ((currUs - _copterState.posController.replanUs) > g_params.path_replan_dt_us))
         {
             float c0 = cos(phi0);
             float s0 = sin(phi0);
             float dxb = c0 * dx + s0 * dy;
             float dyb = -s0 * dx + c0 * dy;
 
-            if (fabs(dyb) < EPS_X / 2)
+            if (fabs(dyb) < g_params.path_eps_x / 2)
             {
-                if (fabs(dxb) < EPS_X / 2) // pure rotation
+                if (fabs(dxb) < g_params.path_eps_x / 2) // pure rotation
                 {
-                    float dT = fabs(dphi) / W_MAX;
+                    float dT = fabs(dphi) / g_params.path_w_max;
                     _copterState.velController.cmd.v = 0;
-                    _copterState.velController.cmd.w = fabs(dphi) > EPS_PHI ? dphi / dT : 0.0;
+                    _copterState.velController.cmd.w
+                        = fabs(dphi) > g_params.path_eps_phi ? dphi / dT : 0.0;
                 }
                 else // straight line case
                 {
                     float arcLen = fabs(dxb);
-                    float dT = arcLen / V_MAX;
+                    float dT = arcLen / g_params.path_v_max;
 
                     _copterState.velController.cmd.v = dxb / dT;
                     _copterState.velController.cmd.w = 0;
@@ -506,15 +578,15 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
                 }
 
                 float arcLen = fabs(dxb) + fabs(dyb);
-                float dT = arcLen / V_MAX;
+                float dT = arcLen / g_params.path_v_max;
 
                 _copterState.velController.cmd.w = theta / dT;
                 _copterState.velController.cmd.v = k * _copterState.velController.cmd.w;
 
-                if (_copterState.velController.cmd.v > V_MAX)
-                    _copterState.velController.cmd.v = V_MAX;
-                else if (_copterState.velController.cmd.v < -V_MAX)
-                    _copterState.velController.cmd.v = -V_MAX;
+                if (_copterState.velController.cmd.v > g_params.path_v_max)
+                    _copterState.velController.cmd.v = g_params.path_v_max;
+                else if (_copterState.velController.cmd.v < -g_params.path_v_max)
+                    _copterState.velController.cmd.v = -g_params.path_v_max;
             }
 
             _copterState.posController.replanUs = Controller_GetUS();
@@ -527,17 +599,11 @@ static FlightScenario_Result_t FlightScenarioFunc_GoTo(ControlOutputs_t *output)
     return FlightScenario_Result_OK;
 }
 
-#define TRG_TRK_LOST_DT     1.2e6
-#define TRG_TRK_KV          0.6f
-#define TRG_TRK_KW          0.4f
-#define TRG_TRK_EPS_X       0.05f
-#define TRG_TRK_EPS_Y       0.05f
-
 static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *output)
 {
     uint64_t currUs = Controller_GetUS();
 
-    if ((currUs - _copterState.trgTrackController.lastTrgPosUs) > TRG_TRK_LOST_DT)
+    if ((currUs - _copterState.trgTrackController.lastTrgPosUs) > g_params.tag_lost_dt_us)
     {
         _copterState.iSum.v = 0.0f;
         _copterState.iSum.w = 0.0f;
@@ -551,23 +617,29 @@ static FlightScenario_Result_t FlightScenarioFunc_TrgTrack(ControlOutputs_t *out
         return FlightScenario_Result_OK;
     }
 
-    float ex = _copterState.trgTrackController.dx  - _copterState.trgTrackController.tdx;
-    float ey = _copterState.trgTrackController.dy  - _copterState.trgTrackController.tdy;
+    float ex = _copterState.trgTrackController.dx - _copterState.trgTrackController.tdx;
+    float ey = _copterState.trgTrackController.dy - _copterState.trgTrackController.tdy;
 
-    if (fabsf(ex) < TRG_TRK_EPS_X) ex = 0.0f;
-    if (fabsf(ey) < TRG_TRK_EPS_Y) ey = 0.0f;
+    if (fabsf(ex) < g_params.tag_eps_x)
+        ex = 0.0f;
+    if (fabsf(ey) < g_params.tag_eps_y)
+        ey = 0.0f;
 
     // -------- P control: position error -> v, w --------
     // X forward: ex>0  -> move forward
     // Y left:    ey>0  -> rotate CCW (positive w) so target moves toward center
-    float v_cmd = TRG_TRK_KV * ex;
-    float w_cmd = TRG_TRK_KW * ey;
+    float v_cmd = g_params.tag_kv * ex;
+    float w_cmd = g_params.tag_kw * ey;
 
-    if (v_cmd >  V_MAX) v_cmd =  V_MAX;
-    if (v_cmd < -V_MAX) v_cmd = -V_MAX;
+    if (v_cmd > g_params.path_v_max)
+        v_cmd = g_params.path_v_max;
+    if (v_cmd < -g_params.path_v_max)
+        v_cmd = -g_params.path_v_max;
 
-    if (w_cmd >  W_MAX) w_cmd =  W_MAX;
-    if (w_cmd < -W_MAX) w_cmd = -W_MAX;
+    if (w_cmd > g_params.path_w_max)
+        w_cmd = g_params.path_w_max;
+    if (w_cmd < -g_params.path_w_max)
+        w_cmd = -g_params.path_w_max;
 
     _copterState.velController.cmd.v = v_cmd;
     _copterState.velController.cmd.w = w_cmd;

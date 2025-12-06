@@ -92,6 +92,7 @@ static void _Controller_HandleSetVels(const HIP_SetVels_t *cmd);
 static void _Controller_HandleSetPos(const HIP_SetPos_t *cmd);
 static void _Controller_HandleTrgPos(const HIP_TrgPos_t *cmd);
 static void _Controller_HandleAZ5(const HIP_AZ5_t *cmd);
+static void _Controller_HandleSetParams(const HIP_SetParams_t *cmd);
 
 static void _Controller_SendMessages();
 
@@ -386,6 +387,9 @@ static void _Controller_ProcessCommand(const HIP_Cmd_t *cmd)
     case HIP_MSG_TRG_POS:
         _Controller_HandleTrgPos((HIP_TrgPos_t *)cmd);
         break;
+    case HIP_MSG_SET_PARAMS:
+        _Controller_HandleSetParams((HIP_SetParams_t *)cmd);;
+        break;
     default:
         _dbg = 1003;
         break;
@@ -491,6 +495,14 @@ static void _Controller_HandleTrgPos(const HIP_TrgPos_t *cmd)
     FlightScenario_SetInputs(FlightScenario_Input_TrgPosCmd, (void*)&(cmd->payload));
 
     // no ack?
+}
+
+static void _Controller_HandleSetParams(const HIP_SetParams_t *cmd)
+{
+    FlightScenario_SetInputs(FlightScenario_Input_Params, (void*)&(cmd->payload));
+
+    uint16_t cmdA = HIP_MSG_SET_PARAMS;
+    HostIface_PutData(HIP_SERIAL, HIP_MSG_ACK, (uint8_t *)&cmdA, sizeof(cmdA));
 }
 
 static void _Controller_HandleResetPos(const HIP_ResetPos_t *cmd)

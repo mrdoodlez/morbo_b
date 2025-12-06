@@ -30,6 +30,7 @@ extern "C"
 
     typedef enum
     {
+        FlightScenario_Input_Params,
         FlightScenario_Input_Meas,
         FlightScenario_Input_DebugPwms,
         FlightScenario_Input_VelCmd,
@@ -106,10 +107,6 @@ extern "C"
     int FlightScenario_SetScenario(FlightScenario_t s);
 
     int FlightScenario_SetInputs(FlightScenario_Input_t type, const void *data);
-
-    int FlightScenario_Set_PID_Koeffs(FS_PID_Koeffs_t *koeffs);
-
-    int FlightScenario_Set_Mass(float mass);
 
     FlightScenario_Result_t FlightScenario(ControlOutputs_t *output);
 

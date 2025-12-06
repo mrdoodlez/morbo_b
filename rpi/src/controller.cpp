@@ -243,15 +243,21 @@ static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
     return -10;
 }
 
+int g_dbg = 0;
+
+void __dbg_hook(int p)
+{
+    g_dbg = p;
+}
+
 static int _SetParams()
 {
     ParamsView v{};
-    if (Controller_GetParams(ParamPage_System, &v))
+    if (Controller_GetParams(ParamPage_Mcu, &v))
         return -10;
 
-    auto mcu = *static_cast<const McuParams_t *>(v.ptr);
-
-    return _SendCommand(HIP_MSG_SET_PARAMS, (uint8_t *)&mcu, sizeof(mcu));
+    auto mcu = static_cast<const McuParams_t *>(v.ptr);
+    return _SendCommand(HIP_MSG_SET_PARAMS, (uint8_t *)mcu, sizeof(McuParams_t));
 }
 
 static int _SetWorkMode(uint8_t iMode, uint8_t fcMode)

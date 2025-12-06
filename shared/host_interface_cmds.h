@@ -2,6 +2,7 @@
 #define _HOST_INTERFACE_STRUCTS_H_
 
 #include <stdint.h>
+#include "mcu_params.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -24,6 +25,7 @@ extern "C"
 #define HIP_MSG_WM 0x0400
 #define HIP_MSG_RESET_POS 0x0500
 #define HIP_MSG_SET_PID 0x0600
+#define HIP_MSG_SET_PARAMS 0x0601
 #define HIP_MSG_SET_VELS 0x0700
 #define HIP_MSG_SET_POS 0x0701
 #define HIP_MSG_TRG_POS 0x0702
@@ -331,6 +333,13 @@ extern "C"
         HIP_Payload_TrgPos_t payload;
         uint16_t crc;
     } __attribute__((packed)) HIP_TrgPos_t;
+
+    typedef struct
+    {
+        HIP_Header_t header;
+        McuParams_t payload;
+        uint16_t crc;
+    } __attribute__((packed)) HIP_SetParams_t;
 
     typedef struct
     {

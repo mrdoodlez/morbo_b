@@ -1,5 +1,6 @@
 #include "controller.h"
 #include "params.h"
+#include "mcu_params.h"
 #include "comm.h"
 #include "vodom.h"
 #include "host_interface_cmds.h"
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <iomanip>
 
+static int _SetParams();
 static int _SetWorkMode(uint8_t iMode, uint8_t fcMode);
 static int _EnableMessage(uint16_t msgId, uint16_t periodMs);
 
@@ -208,14 +210,17 @@ int Controller_Start()
 
 static int _RoverConfig()
 {
-    if (_SetWorkMode(IMU_Mode_Fusion, FlightScenario_TrgTrack))
+    if (_SetParams())
         return -10;
 
-    if (_EnableMessage(HIP_MSG_PVT, 100))
+    if (_SetWorkMode(IMU_Mode_Fusion, FlightScenario_TrgTrack))
         return -20;
 
-    if (_EnableMessage(HIP_MSG_WHT, 100))
+    if (_EnableMessage(HIP_MSG_PVT, 100))
         return -30;
+
+    if (_EnableMessage(HIP_MSG_WHT, 100))
+        return -40;
 
     return 0;
 }
@@ -236,6 +241,17 @@ static int _SendCommand(uint16_t id, const uint8_t *buff, size_t len)
     vlog.text << "command " << id << " not acked" << std::endl;
 
     return -10;
+}
+
+static int _SetParams()
+{
+    ParamsView v{};
+    if (Controller_GetParams(ParamPage_System, &v))
+        return -10;
+
+    auto mcu = *static_cast<const McuParams_t *>(v.ptr);
+
+    return _SendCommand(HIP_MSG_SET_PARAMS, (uint8_t *)&mcu, sizeof(mcu));
 }
 
 static int _SetWorkMode(uint8_t iMode, uint8_t fcMode)

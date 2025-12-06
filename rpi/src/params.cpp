@@ -1,13 +1,16 @@
 #include "params.h"
+#include "mcu_params.h"
 #include <fstream>
 #include <stdexcept>
+#include <cmath>
 #include <nlohmann/json.hpp>
+#include "logger.h"
 
 using json = nlohmann::json;
 
 static VodomParams g_vodomParams;
 static SystemParams g_sysParams;
-static McuParams g_mcuParams;
+static McuParams_t g_mcuParams;
 
 static int get_page(ParamPage p, ParamsView *out)
 {
@@ -30,7 +33,7 @@ static int get_page(ParamPage p, ParamsView *out)
     case ParamPage_Mcu:
     {
         out->ptr = &g_mcuParams;
-        out->size = sizeof(McuParams);
+        out->size = sizeof(McuParams_t);
         out->version = 0;
         return 0;
     }
@@ -39,6 +42,93 @@ static int get_page(ParamPage p, ParamsView *out)
     }
 
     return 0;
+}
+
+static int16_t encode_q1k(float v)
+{
+    float x = v * MCU_Q_SCALE_1K;
+    if (x > 32767.0f)
+        x = 32767.0f;
+    if (x < -32768.0f)
+        x = -32768.0f;
+    return static_cast<int16_t>(std::lrintf(x));
+}
+
+static uint8_t encode_pwm01(float v)
+{
+    if (v < 0.0f)
+        v = 0.0f;
+    if (v > 1.0f)
+        v = 1.0f;
+    return static_cast<uint8_t>(std::lrintf(v * 255.0f));
+}
+
+static int load_mcu_params_strict(const json &jm, McuParams_t &m, std::string &err)
+{
+    try
+    {
+        // ---------- rover ----------
+        const auto &jr = jm.at("rover");
+        m.enc_pulses = static_cast<uint16_t>(jr.at("enc_pulses").get<int>());
+        m.wheel_d_mm = static_cast<uint16_t>(std::lrintf(jr.at("wheel_d").get<float>() * 1000.0f));       // m→mm
+        m.wheel_base_mm = static_cast<uint16_t>(std::lrintf(jr.at("wheel_base").get<float>() * 1000.0f)); // m→mm
+
+        // ---------- omega ----------
+        const auto &jo = jm.at("omega");
+        m.omega_window_sz = static_cast<uint8_t>(jo.at("window_sz").get<int>());
+        m.reserved0 = 0;
+
+        // ---------- pid_v ----------
+        {
+            const auto &jp = jm.at("pid_v");
+            m.pid_v_kp_q = encode_q1k(jp.at("kp").get<float>());
+            m.pid_v_ki_q = encode_q1k(jp.at("ki").get<float>());
+            m.pid_v_kd_q = encode_q1k(jp.at("kd").get<float>());
+        }
+
+        // ---------- pid_w ----------
+        {
+            const auto &jp = jm.at("pid_w");
+            m.pid_w_kp_q = encode_q1k(jp.at("kp").get<float>());
+            m.pid_w_ki_q = encode_q1k(jp.at("ki").get<float>());
+            m.pid_w_kd_q = encode_q1k(jp.at("kd").get<float>());
+        }
+
+        // ---------- limits ----------
+        {
+            const auto &jl = jm.at("limits");
+            m.pwm_max_q = encode_pwm01(jl.at("pwm_max").get<float>());
+            m.reserved1 = 0;
+        }
+
+        // ---------- go to ----------
+        {
+            const auto &jp = jm.at("path");
+            m.path_eps_x_q = encode_q1k(jp.at("eps_x").get<float>());
+            m.path_eps_phi_q = encode_q1k(jp.at("eps_phi").get<float>());
+
+            m.path_replan_dt_us = static_cast<uint64_t>(jp.at("replan_dt").get<double>());
+            m.path_v_max_q = encode_q1k(jp.at("v_max").get<float>());
+            m.path_w_max_q = encode_q1k(jp.at("w_max").get<float>());
+        }
+
+        // ---------- tag_track ----------
+        {
+            const auto &jt = jm.at("tag_track");
+            m.tag_lost_dt_us = static_cast<uint64_t>(jt.at("lost_dt").get<double>());
+            m.tag_kv_q = encode_q1k(jt.at("kv").get<float>());
+            m.tag_kw_q = encode_q1k(jt.at("kw").get<float>());
+            m.tag_eps_x_q = encode_q1k(jt.at("eps_x").get<float>());
+            m.tag_eps_y_q = encode_q1k(jt.at("eps_y").get<float>());
+        }
+
+        return -1;
+    }
+    catch (const std::exception &e)
+    {
+        err = e.what();
+        return 0;
+    }
 }
 
 int Controller_LoadParams(const std::string &config_path)
@@ -72,8 +162,8 @@ int Controller_LoadParams(const std::string &config_path)
         g_vodomParams.camera_dev = jv.value("camera_dev", std::string("/dev/video0"));
 
         // Image
-        g_vodomParams.W   = jv.value("W",   800);
-        g_vodomParams.H   = jv.value("H",   600);
+        g_vodomParams.W = jv.value("W", 800);
+        g_vodomParams.H = jv.value("H", 600);
         g_vodomParams.FPS = jv.value("FPS", 30);
 
         g_vodomParams.tag_size_m = jv.value("tag_size_m", 0.105f);
@@ -122,56 +212,39 @@ int Controller_LoadParams(const std::string &config_path)
 
         // Temporal filtering
         g_vodomParams.confirm_hits = jv.value("confirm_hits", 2);
-        g_vodomParams.forget_miss  = jv.value("forget_miss",  3);
+        g_vodomParams.forget_miss = jv.value("forget_miss", 3);
 
         // ROI
-        g_vodomParams.roi_expand   = jv.value("roi_expand",   2.0f);
+        g_vodomParams.roi_expand = jv.value("roi_expand", 2.0f);
 
         // -------- SYSTEM --------
         if (j.contains("system"))
         {
             const auto &js = j.at("system");
-            g_sysParams.mcu_dev  = js.value("mcu_dev",  std::string("/dev/ttyUSB0"));
+            g_sysParams.mcu_dev = js.value("mcu_dev", std::string("/dev/ttyUSB0"));
             g_sysParams.host_dev = js.value("host_dev", std::string("/dev/ttyUSB1"));
         }
 
         // -------- MCU --------
-        if (j.contains("mcu"))
+        if (!j.contains("mcu"))
         {
-            const auto &jm = j.at("mcu");
+            vlog.text << "[params] 'mcu' section missing in " << config_path << std::endl;
+            return -2;
+        }
 
-            if (jm.contains("pid_angle"))
-            {
-                const auto &p = jm.at("pid_angle");
-                g_mcuParams.angle_kp = p.value("kp", 1.0);
-                g_mcuParams.angle_ki = p.value("ki", 0.1);
-                g_mcuParams.angle_kd = p.value("kd", 0.01);
-            }
-
-            if (jm.contains("pid_rate"))
-            {
-                const auto &p = jm.at("pid_rate");
-                g_mcuParams.rate_kp = p.value("kp", 0.8);
-                g_mcuParams.rate_ki = p.value("ki", 0.05);
-                g_mcuParams.rate_kd = p.value("kd", 0.005);
-            }
-
-            if (jm.contains("pid_pos"))
-            {
-                const auto &p = jm.at("pid_pos");
-                g_mcuParams.pos_kp = p.value("kp", 0.5);
-                g_mcuParams.pos_ki = p.value("ki", 0.0);
-                g_mcuParams.pos_kd = p.value("kd", 0.0);
-            }
+        std::string mcuErr;
+        if (!load_mcu_params_strict(j["mcu"], g_mcuParams, mcuErr))
+        {
+            vlog.text << "[params] invalid 'mcu' section in " << config_path << ", " << mcuErr;
+            return -3;
         }
     }
     catch (const std::exception &e)
     {
-        // Any unexpected schema issues
         return -4;
     }
 
-    return 0; // success
+    return 0;
 }
 
 int Controller_GetParams(ParamPage page, ParamsView *out_view)

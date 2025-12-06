@@ -35,20 +35,46 @@
   },
 
   "mcu": {
-    "pid_angle": {
-      "kp": 1.0,
-      "ki": 0.1,
-      "kd": 0.01
+    "rover": {
+      "enc_pulses": 16,
+      "wheel_d": 0.075,
+      "wheel_base": 0.27
     },
-    "pid_rate": {
-      "kp": 0.8,
-      "ki": 0.05,
-      "kd": 0.005
+
+    "omega": {
+      "window_sz": 16
     },
-    "pid_pos": {
+
+    "pid_v": {
       "kp": 0.5,
-      "ki": 0.0,
+      "ki": 0.05,
       "kd": 0.0
+    },
+
+    "pid_w": {
+      "kp": 0.1,
+      "ki": 0.01,
+      "kd": 0.0
+    },
+
+    "limits": {
+      "pwm_max": 0.9
+    },
+
+    "path": {
+      "eps_x": 0.2,
+      "eps_phi": 0.087,
+      "replan_dt": 200000.0,
+      "v_max": 0.3,
+      "w_max": 1.57
+    },
+
+    "tag_track": {
+      "lost_dt": 1200000.0,
+      "kv": 0.6,
+      "kw": 0.4,
+      "eps_x": 0.05,
+      "eps_y": 0.05
     }
   }
 }

@@ -57,11 +57,3 @@ struct SystemParams
     std::string mcu_dev = "/dev/ttyUSB0";
     std::string host_dev = "/dev/ttyUSB1";
 };
-
-struct McuParams
-{
-    // Dummy PID coeffs for now
-    double angle_kp = 1.0, angle_ki = 0.1, angle_kd = 0.01;
-    double rate_kp  = 0.8, rate_ki  = 0.05, rate_kd  = 0.005;
-    double pos_kp   = 0.5, pos_ki   = 0.0,  pos_kd   = 0.0;
-};

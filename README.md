@@ -47,5 +47,21 @@ On the PC there is a lightweight viewer that:
 - Shows the incoming video stream  
 - Visualises telemetry in real time
 
+## Android monitoring app
+
+There is also a very simple Android application used purely as a **telemetry monitor**:
+
+- Connects to the rover over BLE
+- Receives telemetry packets
+- Plots basic rover data (orientation, velocities, tag tracking status) in real time
+- Intended only for quick field diagnostics and status monitoring
+
+**Disclaimer**
+
+The Android application is a pure product of *vibe coding* and was generated almost entirely with the help of AI tools.
+It exists solely as a practical utility for this project.
+
+I do **not** consider it representative of my skills or experience in Android development, and it is **not** meant to showcase Android programming expertise in any way.
+
 ## Demo
 https://www.linkedin.com/posts/stanislav-raskov-8b927817_robotics-embedded-opencv-activity-7396827851494297600-C0tn?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAANrug0B6drm2dej2f2d9ZgyykN8vfbWWls

@@ -7,11 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -28,7 +24,6 @@ import com.example.morbo_bremote.ui.theme.MorboBRemoteTheme
 
 class MainActivity : ComponentActivity() {
 
-    // Launcher for runtime permission requests
     private val permissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -36,7 +31,7 @@ class MainActivity : ComponentActivity() {
         if (granted) {
             RoverLog.d("All BLE permissions granted")
         } else {
-            RoverLog.e("BLE permissions NOT granted -> BLE won't work")
+            RoverLog.e("BLE permissions NOT granted – BLE disabled")
         }
     }
 
@@ -44,7 +39,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Ask for BLE-related permissions when activity starts
         requestBlePermissions()
 
         setContent {
@@ -52,7 +46,6 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val transport = remember { BleRoverTransport(context) }
 
-                // Start BLE scan once, after composition
                 LaunchedEffect(Unit) {
                     RoverLog.d("Starting BLE transport")
                     transport.start()
@@ -65,94 +58,127 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBlePermissions() {
         val permissions = mutableListOf<String>()
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+
             permissions += Manifest.permission.BLUETOOTH_SCAN
             permissions += Manifest.permission.BLUETOOTH_CONNECT
         } else {
-            // Android < 12 – BLE scan historically required location
             permissions += Manifest.permission.ACCESS_FINE_LOCATION
         }
-
         permissionRequest.launch(permissions.toTypedArray())
     }
 }
 
-// -------------------- UI --------------------
+/* ============================ UI ============================ */
 
 @Composable
 fun MainScreen(transport: RoverTransport) {
 
+    // Attach transport sender for PingManager
+    RoverState.attachTransportSender { bytes -> transport.send(bytes) }
+
     val isConnected = RoverState.isConnected
     val telemetry = RoverState.telemetry
-    val logLines = RoverLog.lines
+    val ping = RoverState.ping
+    val target = RoverState.target
+    val logs = RoverLog.lines
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize()
-    ) { innerPadding ->
+    val pongText = when {
+        !ping.isPinging -> "Pong: N/A"
+        ping.pongOk -> {
+            val rtt = ping.lastRttMs?.toString() ?: "-"
+            "Pong: OK (rtt=${rtt} ms)"
+        }
+        else -> "Pong: NO RESPONSE"
+    }
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         Column(
             modifier = Modifier
-                .padding(innerPadding)
+                .padding(padding)
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
+
             Text(text = "Morbo-B Remote")
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(text = if (isConnected) "BLE: CONNECTED" else "BLE: DISCONNECTED")
 
-            // Connection status
-            Text(
-                text = if (isConnected) "Status: CONNECTED" else "Status: DISCONNECTED"
-            )
+            Spacer(Modifier.height(8.dp))
+            Text(text = "Ping: ${if (ping.isPinging) "ACTIVE" else "OFF"}")
+            Text(text = pongText)
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // STOP button
-            Button(
-                onClick = {
-                    val frame = HipProtocol.buildAz5Frame()
-                    transport.send(frame)
-                },
-                enabled = isConnected   // only active when BLE connected
-            ) {
-                Text(text = "STOP")
+            Row {
+                Button(
+                    onClick = { RoverState.startPinging() },
+                    enabled = isConnected && !ping.isPinging
+                ) {
+                    Text("START")
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Button(
+                    onClick = {
+                        RoverState.stopPinging()
+                        transport.send(HipProtocol.buildAz5Frame())
+                    },
+                    enabled = isConnected
+                ) {
+                    Text("STOP")
+                }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
 
-            // Telemetry panel
+            /* -------- Telemetry -------- */
+
             if (telemetry != null) {
                 Text(
-                    text = "Coords: x=%.2f, y=%.2f, z=%.2f".format(
-                        telemetry.posX,
-                        telemetry.posY,
-                        telemetry.posZ
-                    )
+                    text = "Pos: x=%.2f y=%.2f z=%.2f"
+                        .format(telemetry.posX, telemetry.posY, telemetry.posZ)
                 )
-                Text(
-                    text = "Speed: %.2f m/s".format(telemetry.speed)
-                )
-                telemetry.yaw?.let { yaw ->
-                    Text(text = "Yaw: %.2f".format(yaw))
+                Text(text = "Speed: %.2f m/s".format(telemetry.speed))
+                telemetry.yaw?.let {
+                    Text(text = "Yaw: %.2f".format(it))
                 }
             } else {
-                Text(text = "Coords: (no data)")
-                Text(text = "Speed: (no data)")
+                Text("Telemetry: no data")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // Log window
-            Text(text = "Log:")
-            Spacer(modifier = Modifier.height(4.dp))
+            /* -------- Target -------- */
+
+            when {
+                target == null ->
+                    Text("Target: N/A")
+
+                target.locked ->
+                    Text(
+                        text = "Target: LOCKED  dx=%.2f  dy=%.2f"
+                            .format(target.dx, target.dy)
+                    )
+
+                else ->
+                    Text("Target: NOT LOCKED")
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            /* -------- Log window -------- */
+
+            Text("Log:")
+            Spacer(Modifier.height(4.dp))
 
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
             ) {
-                items(logLines) { line ->
+                items(logs) { line ->
                     Text(text = line)
                 }
             }
@@ -164,9 +190,8 @@ fun MainScreen(transport: RoverTransport) {
 @Composable
 fun MainScreenPreview() {
     MorboBRemoteTheme {
-        // For preview we fake a transport that does nothing
         val dummyTransport = object : RoverTransport {
-            override fun send(data: ByteArray) { /* no-op in preview */ }
+            override fun send(data: ByteArray) {}
         }
         MainScreen(transport = dummyTransport)
     }

@@ -13,7 +13,9 @@ import java.nio.ByteOrder
  */
 class HipParser(
     private val onPvt: (TelemetryState) -> Unit,
-    private val onWht: (Float) -> Unit
+    private val onWht: (Float) -> Unit,
+    private val onPingRx: (Int) -> Unit,
+    private val onTrgPos: (TargetState) -> Unit
 ) {
 
     private enum class State {
@@ -106,7 +108,8 @@ class HipParser(
         when (cmd) {
             HipProtocol.MSG_PVT -> handlePvt(payload)
             HipProtocol.MSG_WHT -> handleWht(payload)
-            // other messages ignored for now
+            HipProtocol.CMD_PING -> handlePing(payload)
+            HipProtocol.CMD_TRG_POS -> handleTrgPos(payload)
         }
     }
 
@@ -140,6 +143,38 @@ class HipParser(
         val bb = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
         val yaw = bb.float
         onWht(yaw)
+    }
+
+    private fun handlePing(payload: ByteArray) {
+        // Python uses struct.unpack("H", payload) -> uint16 LE
+        if (payload.size < 2) return
+        val bb = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+        val seq = bb.short.toInt() and 0xFFFF
+        onPingRx(seq)
+    }
+
+    private fun handleTrgPos(payload: ByteArray) {
+        // payload format: '4fB'
+        if (payload.size < 4 * 4 + 1) return
+
+        val bb = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+
+        val trgDx = bb.float
+        val trgDy = bb.float
+
+        bb.float   // tdx (ignored)
+        bb.float   // tdy (ignored)
+
+        val flags = bb.get().toInt() and 0xFF
+        val locked = (flags and 0x01) != 0
+
+        onTrgPos(
+            TargetState(
+                dx = trgDx,
+                dy = trgDy,
+                locked = locked
+            )
+        )
     }
 
     // Local copy of CRC-16/CCITT (same as in HipProtocol / Python)

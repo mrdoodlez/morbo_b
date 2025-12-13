@@ -6,11 +6,15 @@ import java.nio.ByteOrder
 object HipProtocol {
 
     // === Commands ===
+
+    const val CMD_PING = 0x0001
     const val CMD_AZ5  = 0xFFF0
 
     // === Messages (must match C) ===
     const val MSG_PVT  = 0x0A05
     const val MSG_WHT  = 0x0A06
+
+    const val CMD_TRG_POS = 0x0702
 
     private const val HIP_M: Byte = 'm'.code.toByte()
     private const val HIP_B: Byte = 'b'.code.toByte()
@@ -77,4 +81,16 @@ object HipProtocol {
         val payload = byteArrayOf(0x00)
         return packMessage(CMD_AZ5, payload)
     }
+
+    fun buildPingFrame(seq: Int): ByteArray {
+        // payload 'H' -> uint16 little-endian
+        val payload = ByteBuffer
+            .allocate(2)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .putShort((seq and 0xFFFF).toShort())
+            .array()
+
+        return packMessage(CMD_PING, payload)
+    }
+
 }

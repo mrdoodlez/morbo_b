@@ -33,18 +33,18 @@ static void _OnPong(const HIP_Cmd_t*);
 static void _OnAck (const HIP_Cmd_t*);
 static void _OnNack(const HIP_Cmd_t*);
 
-std::map<uint16_t, HIP_CmdHandler> g_handlTable;
+std::map<uint16_t, HIP_CmdHandler> g_mcuHandlers;
 
 /*******************************************************************************/
 
-extern "C" void _Comm_NewMessage(const HIP_Cmd_t* cmd)
+extern "C" void _Comm_NewMessage(int, const HIP_Cmd_t* cmd)
 {
     HIP_CmdHandler handler = nullptr;
 
     // vlog.text << __func__ << ' ' << cmd->header.cmd << std::endl;
 
-    auto it = g_handlTable.find(cmd->header.cmd);
-    if (it != g_handlTable.end())
+    auto it = g_mcuHandlers.find(cmd->header.cmd);
+    if (it != g_mcuHandlers.end())
         handler = it->second;
 
     if (handler)
@@ -62,6 +62,25 @@ extern "C" void _Comm_NewMessage(const HIP_Cmd_t* cmd)
     }
 }
 
+extern "C" void _Host_NewMessage(int port, const HIP_Cmd_t* cmd)
+{
+    if (cmd->header.cmd == HIP_MSG_PING)
+    {
+        uint16_t rxSeq = ((HIP_Ping_t*)cmd)->payload.seqNumber;
+        HostIface_PutData(port, HIP_MSG_PING, (uint8_t *)&rxSeq, sizeof(rxSeq));
+        HostIface_Send(port);
+    }
+    else
+    {
+        ControllerMsg hostMsg;
+        hostMsg.ts_ms = Controller_NowMs();
+        hostMsg.type = ControllerMsg::Type::TYPE_HOST;
+        hostMsg.payload.rovData = *cmd;
+
+        Controller_PostMessage(hostMsg);
+    }
+}
+
 /*******************************************************************************/
 
 void Comm_Start(int mcu, int hst)
@@ -73,26 +92,30 @@ void Comm_Start(int mcu, int hst)
         .handler = _Comm_NewMessage,
     };
 
+    g_mcuHandlers[HIP_MSG_PING] = _OnPong;
+    g_mcuHandlers[HIP_MSG_ACK ] = _OnAck;
+    g_mcuHandlers[HIP_MSG_NAK ] = _OnNack;
+
     HostIface_Register(mcu, &mcuCbs);
-
-    HostIface_Callbacks_t hstCbs =
-    {
-        .read_fn = Serial_Read, //P2pLink_Read,
-        .write_fn = Serial_Write, //P2pLink_Write,
-        .handler = 0,
-    };
-
-    HostIface_Register(hst, &hstCbs);
-
-    g_handlTable[HIP_MSG_PING] = _OnPong;
-    g_handlTable[HIP_MSG_ACK ] = _OnAck;
-    g_handlTable[HIP_MSG_NAK ] = _OnNack;
 
     std::thread([mcu] {
         HostIface_Listen(mcu);
     }).detach();
 
     _Pinger_Start(mcu);
+
+    HostIface_Callbacks_t hstCbs =
+    {
+        .read_fn = Serial_Read, //P2pLink_Read,
+        .write_fn = Serial_Write, //P2pLink_Write,
+        .handler = _Host_NewMessage,
+    };
+
+    HostIface_Register(hst, &hstCbs);
+
+    std::thread([hst] {
+        HostIface_Listen(hst);
+    }).detach();
 }
 
 void _Pinger_Start(int comm)

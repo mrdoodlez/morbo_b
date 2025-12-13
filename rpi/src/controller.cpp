@@ -458,6 +458,15 @@ static void _HandleRover(const HIP_Cmd_t &rov)
     }
 }
 
+static void _HandleHost(const HIP_Cmd_t &hst)
+{
+    if (hst.header.cmd == HIP_MSG_AZ5)
+    {
+        extern std::atomic<bool> g_stop;
+        g_stop.store(true, std::memory_order_relaxed);
+    }
+}
+
 static inline double rad2deg(double r) { return r * 180.0 / M_PI; }
 
 static void _HandleVodom(const VodomMsg &v)
@@ -492,6 +501,9 @@ static void _HandleMessage(const ControllerMsg &m)
         break;
     case ControllerMsg::Type::TYPE_VODOM:
         _HandleVodom(m.payload.vodom);
+        break;
+    case ControllerMsg::Type::TYPE_HOST:
+        _HandleHost(m.payload.rovData);
         break;
     default:
         break;

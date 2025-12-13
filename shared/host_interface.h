@@ -14,7 +14,7 @@ typedef struct
 {
     size_t (*read_fn)(int, uint8_t*, size_t);
     size_t (*write_fn)(int, const uint8_t*, size_t);
-    void (*handler)(const HIP_Cmd_t*);
+    void (*handler)(int, const HIP_Cmd_t*);
 } HostIface_Callbacks_t;
 
 void HostIface_Register(int dev, const HostIface_Callbacks_t* cbs);

@@ -141,7 +141,7 @@ void HostIface_Listen(int dev)
                     if (recvCrc == calcCrc)
                     {
                         if (g_cbs[dev].handler != 0)
-                            g_cbs[dev].handler(&g_decoderCtx[dev].rxCmd);
+                            g_cbs[dev].handler(dev, &g_decoderCtx[dev].rxCmd);
                     }
                 }
                 protoState = ProtoState_m;
